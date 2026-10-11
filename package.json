@@ -1,0 +1,15 @@
+{
+  "name": "sternenzauber-helferplan",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Helferplan für die Standbesetzung beim Sternenzauber Witzhelden",
+  "scripts": {
+    "baue": "python3 src/build.py",
+    "test": "node test/core.test.mjs && node test/blobs.test.mjs",
+    "lokal": "node test/dev-server.mjs 8788"
+  },
+  "dependencies": {
+    "@netlify/blobs": "^11.1.4"
+  }
+}
