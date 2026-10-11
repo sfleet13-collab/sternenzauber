@@ -2,6 +2,7 @@
 'use strict';
 const SEED = __SNAP__;
 const REMOTE = __REMOTE__;
+const API = '__API__'; /* 'netlify': /api/…   'php': api.php?r=… (normales Webhosting) */
 __SHARED__
 const { diff, applyOps, clone } = PATCH;
 const $ = s => document.querySelector(s);
@@ -54,7 +55,10 @@ async function api(path, body) {
     const r = await CORE.handle({ method: body ? 'POST' : 'GET', path: path.split('?')[0], rev: q.get('rev'), role: q.get('role'), body: body ? clone(body) : null, auth }, localStore, () => clone(SEED));
     if (r.status >= 400) throw Object.assign(new Error(r.body.error), { status: r.status, code: r.body.error });
     return clone(r.body); }
-  const r = await fetch('/api/' + path, { method: body ? 'POST' : 'GET', headers: body ? { 'content-type': 'application/json', authorization: auth } : { authorization: auth }, body: body ? JSON.stringify(body) : undefined, cache: 'no-store' });
+  const cut = path.indexOf('?'), name = cut < 0 ? path : path.slice(0, cut), query = cut < 0 ? '' : path.slice(cut + 1);
+  const url = API === 'php' ? 'api.php?r=' + name + (query ? '&' + query : '') : '/api/' + path;
+  const headers = API === 'php' ? { 'x-sz-token': auth.slice(7) } : { authorization: auth }; if (body) headers['content-type'] = 'application/json';
+  const r = await fetch(url, { method: body ? 'POST' : 'GET', headers, body: body ? JSON.stringify(body) : undefined, cache: 'no-store' });
   let j = null; try { j = await r.json(); } catch (e) {}
   if (!r.ok || !j) throw Object.assign(new Error('http'), { status: r.status, code: (j && j.error) || 'http' });
   return j;

@@ -2,3 +2,5 @@ node_modules/
 .netlify/
 .DS_Store
 test/tmp/
+hostinger/daten/*
+!hostinger/daten/.htaccess

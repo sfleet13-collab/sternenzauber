@@ -3,7 +3,7 @@
    Aufruf: python3 src/build.py"""
 import os, re, json, base64
 
-VERSION = '11.10.2026 c'
+VERSION = '11.10.2026 d'
 # Startwerte beim allerersten Aufruf. Danach gelten die Zugänge, die die Orga in der App unter «Einrichten» festlegt.
 START_CODES = {'helper': 'STERN2026', 'orga': 'Zimtstern-Bratapfel-58'}
 ORGA_NOTE = 'Orga-Team: Juri, Assi, Nina, Magnus und Susan.'
@@ -27,9 +27,9 @@ def module(code, name, exports, pre=''):
 PATCH = module(rd('netlify', 'functions', 'lib', 'patch.mjs'), 'PATCH', ['diff', 'applyOps', 'applyOp', 'validOp', 'at', 'clone'])
 CORE = module(rd('netlify', 'functions', 'lib', 'core.mjs'), 'CORE', ['handle'], 'const { applyOp, validOp } = PATCH;\n')
 
-def script(remote, standalone, logo):
+def script(remote, standalone, logo, api='netlify'):
     js = app.replace('__STARS__', stars).replace('__VERSION__', VERSION)
-    js = js.replace('__REMOTE__', 'true' if remote else 'false').replace('__STANDALONE__', 'true' if standalone else 'false').replace('__LOGO__', logo)
+    js = js.replace('__API__', api).replace('__REMOTE__', 'true' if remote else 'false').replace('__STANDALONE__', 'true' if standalone else 'false').replace('__LOGO__', logo)
     js = js.replace('__SNAP__', 'null' if remote else json.dumps(start_db({'helper': 'STERN2026', 'orga': 'ORGA2026'}), ensure_ascii=False))
     js = js.replace('__SHARED__', PATCH if remote else PATCH + '\n' + CORE)
     assert '__' not in re.sub(r'__proto__', '', js), re.findall(r'__[A-Z]+__', js)
@@ -100,6 +100,20 @@ wr(live, 'public', 'index.html'); print('public/index.html', len(live) // 1024, 
 # 2) Startdaten für den Server
 wr('/* Automatisch erzeugt von src/build.py. Startstand beim allerersten Aufruf der App. */\nexport const seed = () => (' + json.dumps(start_db(START_CODES), ensure_ascii=False) + ');\n', 'netlify', 'functions', 'lib', 'seed.mjs')
 print('seed.mjs geschrieben')
+
+# 2b) Dieselbe App für normales Webhosting mit PHP (z. B. Hostinger): Ordner hostinger/ komplett hochladen
+import shutil
+H = os.path.join(root, 'hostinger')
+if os.path.isdir(H): shutil.rmtree(H)
+shutil.copytree(os.path.join(root, 'public'), H)
+php = page(script(True, True, 'logo-rund.png', 'php'), 'logo-white.png', FONTS)
+assert "const API = 'php';" in php and 'STERN2026' not in php and 'Assi' not in php
+wr(php, 'hostinger', 'index.html')
+shutil.copy(os.path.join(root, 'server-php', 'api.php'), os.path.join(H, 'api.php'))
+GUARD = '<?php http_response_code(404); exit; ?>\n'
+wr(GUARD + json.dumps(start_db(START_CODES), ensure_ascii=False), 'hostinger', 'start.php')
+wr('<IfModule mod_authz_core.c>\nRequire all denied\n</IfModule>\n<IfModule !mod_authz_core.c>\nDeny from all\n</IfModule>\n', 'hostinger', 'daten', '.htaccess')
+print('hostinger/ geschrieben')
 
 # 3) Testseite ohne Server (gleiche Regeln im Browser)
 wr(page(script(False, True, 'logo-rund.png'), 'logo-white.png', FONTS), 'test', 'tmp', 'lokal', 'index.html')
