@@ -445,7 +445,7 @@ const STANDALONE = true;
 const LOGO = 'logo-rund.png';
 const MAILRE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const ROLE = { helper: 'Helfer', orga: 'Orga' };
-const VERSION = '11.10.2026 f';
+const VERSION = '11.10.2026 g';
 const MADE_URL = 'https://susanfleet.de'; /* Link hinter «Made with ♥ by Susan Fleet» */
 const NET = 'Keine Verbindung. Bitte später noch einmal versuchen.';
 const rid = p => p + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
@@ -541,7 +541,7 @@ const grp = st => st.group || OTHER;
 const clock = ts => { const d = new Date(ts); return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0'); };
 
 function cellOf(sh, st) { const c = (sh.cells || {})[st.id] || {};
-  return { people: Array.isArray(c.people) ? c.people : [], note: c.note || '', off: !!c.off, tentative: !!c.tentative, bulk: !!c.bulk, by: c.by && typeof c.by === 'object' ? c.by : {} }; }
+  return { people: Array.isArray(c.people) ? c.people : [], note: c.note || '', off: !!c.off, tentative: false, bulk: !!c.bulk, by: c.by && typeof c.by === 'object' ? c.by : {} }; }
 function statusOf(sh, st) { const c = cellOf(sh, st), min = Math.max(1, Number(st.min) || 2), n = c.people.length;
   c.k = c.off ? 'off' : n === 0 ? 'open' : n < min ? 'part' : c.tentative ? 'tent' : 'ok';
   c.min = min; c.max = Math.max(min, Number(st.max) || min); c.missing = c.off ? 0 : Math.max(0, min - n); c.att = c.k === 'open' || c.k === 'part' || c.k === 'tent';
@@ -620,11 +620,14 @@ function vGate() {
     + '<label class="check"><input type="checkbox" id="g-again"><span>Ihr dürft mich nächstes Jahr wieder anschreiben, wenn der Helferplan öffnet. (freiwillig)</span></label>'
     + '<p class="hint warn" id="g-err" hidden></p><div class="row"><button type="button" class="btn" data-act="gate" data-v="start">Zurück</button><button type="submit" class="btn primary">Zum Plan</button></div></form>';
   else if (S.gate === 'orga') h = '<h2>Orga-Login</h2><p class="muted">Für das Orga-Team.</p><form id="f-orga" novalidate>'
-    + '<div class="field"><label for="g-pw">Passwort</label><input id="g-pw" type="password" autocomplete="current-password"></div>'
+    + '<div class="field"><label for="g-pw">Passwort</label><input id="g-pw" type="password" autocomplete="current-password" autocapitalize="off" autocorrect="off" spellcheck="false"></div>'
+    + '<label class="check"><input type="checkbox" id="g-show"><span>Passwort anzeigen</span></label><p class="hint">Gross- und Kleinschreibung, Bindestriche und Zahlen gehören dazu.</p>'
     + '<p class="hint warn" id="g-err" hidden></p><div class="row"><button type="button" class="btn" data-act="gate" data-v="start">Zurück</button><button type="submit" class="btn primary">Anmelden</button></div></form>';
   else h = '<h2>Schön, dass du mithilfst</h2><p class="muted">Gib den Helfer-Code aus der WhatsApp-Gruppe ein. Danach trägst du dich selbst in freie Schichten ein.</p><form id="f-code" novalidate>'
     + '<div class="field"><label for="g-code">Helfer-Code</label><input id="g-code" autocomplete="off" autocapitalize="characters"></div>'
-    + '<p class="hint warn" id="g-err" hidden></p><button type="submit" class="btn primary">Weiter</button></form>';
+    + '<p class="hint warn" id="g-err" hidden></p><button type="submit" class="btn primary">Weiter</button></form>'
+    + (STANDALONE && /iphone|ipad|ipod/i.test(navigator.userAgent) && !(window.navigator.standalone === true || window.matchMedia('(display-mode: standalone)').matches)
+      ? '<p class="hint">Tipp fürs iPhone: Leg die App zuerst auf den Home-Bildschirm (Anleitung unten) und melde dich dann dort an. So meldest du dich nur einmal an.</p>' : '');
   if (S.gate === 'claim') { const m = model();
     h = '<h2>Stehst du schon im Plan?</h2><p class="muted">Wir haben Einträge gefunden, die zu dir passen könnten. Wählst du einen aus, gehören diese Schichten ab jetzt zu deiner Anmeldung.</p><div class="claims">'
       + P.cands.map(n => { const c = m.people.get(key(n)), k = c ? c.slots.length : 0; return '<button class="btn" data-act="claim" data-v="' + esc(n) + '">Ja, ich bin «' + esc(n) + '» <span class="muted">· ' + k + (k === 1 ? ' Schicht' : ' Schichten') + '</span></button>'; }).join('')
@@ -945,7 +948,6 @@ function drawDlg() {
       + (meHelper() && !D.people.some(p => key(p) === key(myName())) ? '<p><button type="button" class="btn primary" data-d="addme">Mich eintragen (' + esc(myName()) + ')</button></p>' : '')
       + '<datalist id="names">' + [...names].sort((a, b) => a.localeCompare(b, 'de')).map(n => '<option value="' + esc(n) + '">').join('') + '</datalist>'
       + '<p class="hint">' + (D.off ? 'Diese Schicht ist gesperrt.' : miss ? (miss === 1 ? 'Es fehlt noch 1 Person.' : 'Es fehlen noch ' + miss + ' Personen.') : 'Die Schicht ist besetzt.') + '</p>' + cellWarn(m) + '</div>'
-      + '<label class="check"><input type="checkbox" id="f-tent"' + (D.tentative ? ' checked' : '') + '><span>Zusage ist noch nicht bestätigt</span></label>'
       + '<label class="check"><input type="checkbox" id="f-off"' + (D.off ? ' checked' : '') + '><span>Gesperrt: hier kann sich niemand eintragen</span></label>'
       + field('f-note', 'Notiz', 'placeholder="z. B. Tagesbeginn oder Vorstellung 18:00–20:00"', D.note) + foot();
   } else if (D.type === 'hcell') { const i = dayInfo(D.sh.date), c = statusOf(D.sh, D.st), me = meHelper(), mine = myPeople(), inKeys = new Set(c.people.map(key));
@@ -1005,7 +1007,7 @@ function drawDlg() {
       + (D.self ? '<label class="check"><input type="checkbox" id="f-ragain"' + (x.again ? ' checked' : '') + '><span>Ihr dürft mich nächstes Jahr wieder anschreiben, wenn der Helferplan öffnet.</span></label>' : '') + foot();
   } else if (D.type === 'elevate') {
     h += '<header><h2 id="dlg-title">Orga-Login</h2><p class="muted">Mit dem Orga-Passwort bekommst du die Orga-Rechte dazu. Deine Schichten und deine Anmeldung bleiben.</p></header>'
-      + field('f-epw', 'Passwort', 'type="password" autocomplete="current-password" required', '') + '<p class="hint warn" id="f-err" hidden></p><footer><button type="button" class="btn" data-d="cancel">Abbrechen</button><button type="submit" class="btn primary">Anmelden</button></footer>';
+      + field('f-epw', 'Passwort', 'type="password" autocomplete="current-password" autocapitalize="off" autocorrect="off" spellcheck="false" required', '') + '<label class="check"><input type="checkbox" id="f-eshow"><span>Passwort anzeigen</span></label><p class="hint warn" id="f-err" hidden></p><footer><button type="button" class="btn" data-d="cancel">Abbrechen</button><button type="submit" class="btn primary">Anmelden</button></footer>';
   } else if (D.type === 'code') { const lab = { helper: 'Helfer-Code', orga: 'Orga-Passwort' }[D.which];
     h += '<header><h2 id="dlg-title">' + lab + ' ändern</h2><p class="muted">' + (D.which === 'helper' ? 'Den neuen Code musst du danach in der WhatsApp-Gruppe mitteilen. Wer schon angemeldet ist, bleibt angemeldet.' : 'Mindestens 8 Zeichen. Teile das neue Passwort nur dem Orga-Team mit. Wer mit dem alten Passwort angemeldet ist, verliert die Orga-Rechte und meldet sich neu an.') + '</p></header>'
       + field('f-code', 'Neu', 'required autocomplete="off"', DB.codes[D.which]) + foot();
@@ -1039,7 +1041,7 @@ function drawDlg() {
 function blockTargets(m) { const pairs = D.kind === 'shift' ? m.stations.map(st => [D.sh, st]) : m.shifts.filter(s => s.date === D.day).map(sh => [sh, D.st]);
   return pairs.map(([sh, st]) => ({ sh, st, c: cellOf(sh, st) })); }
 const val = id => { const e = document.getElementById(id); return e ? e.value.trim() : ''; };
-function syncCell() { D.note = val('f-note'); D.tentative = $('#f-tent').checked; D.off = $('#f-off').checked; }
+function syncCell() { D.note = val('f-note'); D.tentative = false; D.off = $('#f-off').checked; }
 function addNames() { val('f-name').split(/[+,;&]/).map(s => s.trim()).filter(Boolean).forEach(n => { if (!D.people.some(p => key(p) === key(n))) D.people.push(n); }); }
 function openDlg(d) { D = d; drawDlg(); if (!dlg.open) dlg.showModal(); if (d.type === 'text') { const t = $('#f-text'); if (t) { t.focus(); t.select(); } } }
 function fail(msg) { const e = $('#f-err'); if (e) { e.textContent = msg; e.hidden = false; } }
@@ -1090,14 +1092,15 @@ dlg.addEventListener('click', e => {
 dlg.addEventListener('close', () => { if (S.thanks) { S.thanks = false; nikolaus(1); } if (D && D.type === 'pdfdone' && D.url) { const u = D.url; setTimeout(() => URL.revokeObjectURL(u), 60000); } });
 dlg.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.id === 'f-name' && e.target.value.trim()) { e.preventDefault(); syncCell(); addNames(); drawDlg(); $('#f-name').focus(); } });
 dlg.addEventListener('change', e => { if (D && D.type === 'hcell' && e.target.id === 'f-who') { D.who = e.target.value; D.cands = null; D.sure = null; drawDlg(); const x = $('#f-cfirst') || $('#f-who'); if (x) x.focus(); return; }
-  if (D && D.type === 'cell' && (e.target.id === 'f-off' || e.target.id === 'f-tent')) { const id = e.target.id, pend = $('#f-name').value; syncCell(); drawDlg(); $('#f-name').value = pend; $('#' + id).focus(); } });
+  if (D && D.type === 'elevate' && e.target.id === 'f-eshow') { $('#f-epw').type = e.target.checked ? 'text' : 'password'; return; }
+  if (D && D.type === 'cell' && e.target.id === 'f-off') { const id = e.target.id, pend = $('#f-name').value; syncCell(); drawDlg(); $('#f-name').value = pend; $('#' + id).focus(); } });
 dlg.addEventListener('submit', e => {
   e.preventDefault(); const y = Y();
   if (D.type === 'cell') { syncCell(); addNames();
     /* Hat sich inzwischen jemand eingetragen, bleibt der Name erhalten: nur die eigenen Änderungen zählen */
     const now = cellOf(D.sh, D.st).people, orig = D.orig || now, gone = orig.filter(p => !D.people.includes(p)), people = now.filter(p => !gone.includes(p));
     D.people.forEach(p => { if (!orig.includes(p) && !people.some(x => key(x) === key(p))) people.push(p); });
-    const data = { people, note: D.note, off: D.off, tentative: D.tentative && people.length > 0 }, was = cellOf(D.sh, D.st).by, by = {};
+    const data = { people, note: D.note, off: D.off, tentative: false }, was = cellOf(D.sh, D.st).by, by = {};
     Object.keys(was).forEach(n => { if (people.includes(n)) by[n] = was[n]; }); if (Object.keys(by).length) data.by = by;
     setCell(D.sh, D.st, data); return done('Gespeichert'); }
   if (D.type === 'pdf') { const group = $('#f-pgroup').value, day = $('#f-pday').value, f = e.target; lock(f, true);
@@ -1267,7 +1270,7 @@ view.addEventListener('click', e => {
   else if (a === 'cal-all') { const P = m.people.get(key(myName())); if (P) showIcs(P.slots); }
 });
 view.addEventListener('input', e => { if (e.target.id === 'q') { S.q = e.target.value; render(); } });
-view.addEventListener('change', e => { if (e.target.id === 'grpsel') { S.group = e.target.value; render(); } });
+view.addEventListener('change', e => { if (e.target.id === 'grpsel') { S.group = e.target.value; render(); } else if (e.target.id === 'g-show') { const f = $('#g-pw'); if (f) f.type = e.target.checked ? 'text' : 'password'; } });
 (NARROW.addEventListener ? NARROW.addEventListener.bind(NARROW, 'change') : NARROW.addListener.bind(NARROW))(() => render());
 window.addEventListener('storage', e => {
   if (e.key === SS) { const m = loadMe(); if (!m && ME) signOut(); else if (m && (!ME || m.token !== ME.token)) { ME = m; take({ db: loadCache() }); render(); pull(); } }

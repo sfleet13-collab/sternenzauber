@@ -17,6 +17,7 @@ let fails = 0, n = 0; const ok = (c, l) => { n++; console.log((c ? 'ok      ' : 
   // A: Orga
   await A.click('[data-act=gate][data-v=orga]'); await A.fill('#g-pw', 'falsch'); await A.click('#f-orga [type=submit]'); await A.waitForSelector('#g-err:not([hidden])');
   ok((await A.textContent('#g-err')).includes('stimmt nicht'), 'falsches Orga-Passwort: Hinweis');
+  await A.check('#g-show'); ok((await A.getAttribute('#g-pw', 'type')) === 'text', '«Passwort anzeigen» zeigt das Passwort');
   await A.fill('#g-pw', PW); await A.click('#f-orga [type=submit]'); await A.waitForSelector('#g-first');
   await reg(A, 'Susan', 'Fleet', '0151 1112223', 'susan@beispiel.de');
   ok((await bar(A)).includes('Susan F.') && (await bar(A)).includes('Orga'), 'A ist als Orga angemeldet: ' + await bar(A));
@@ -37,7 +38,8 @@ let fails = 0, n = 0; const ok = (c, l) => { n++; console.log((c ? 'ok      ' : 
   await refresh(A);
   ok((await cellText(A, s1, t1)).includes('Astrid K.'), 'A sieht den Eintrag von B nach «Aktualisieren»');
   // A trägt sich ins selbe Feld ein, B bekommt es von selbst (ohne Tippen)
-  await A.click('[data-s="' + s1 + '"][data-t="' + t1 + '"]'); await A.click('[data-d=addme]'); await A.click('#dform [type=submit]'); await A.waitForTimeout(600);
+  await A.click('[data-s="' + s1 + '"][data-t="' + t1 + '"]'); ok(!(await A.$('#f-tent')) && !(await A.$eval('#dlg', e => e.innerText)).includes('Zusage'), 'kein Feld «Zusage» mehr im Orga-Dialog');
+  await A.click('[data-d=addme]'); await A.click('#dform [type=submit]'); await A.waitForTimeout(600);
   ok((await cellText(A, s1, t1)).includes('Susan F.') && (await cellText(A, s1, t1)).includes('Astrid K.'), 'A steht zusätzlich im Feld');
   const t0 = Date.now(); let auto = false; while (Date.now() - t0 < 36000) { if ((await cellText(B, s1, t1)).includes('Susan F.')) { auto = true; break; } await B.waitForTimeout(1000); }
   ok(auto, 'B sieht den Eintrag von A von selbst nach ' + Math.round((Date.now() - t0) / 1000) + ' s');
