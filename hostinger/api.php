@@ -129,7 +129,10 @@ function &ref_at(&$root, array $path, ?bool &$ok) { $ok = true; $none = null; $n
     else { $ok = false; return $none; } }
   return $n; }
 /* Zwei gleichzeitige Einträge in ein noch leeres Feld dürfen sich nicht überschreiben */
-function merge_cell($old, $neu) { $people = people_of($old); foreach (people_of($neu) as $n) if (!in_array($n, $people, true)) $people[] = $n; $o = deep($neu); $o->people = $people; return $o; }
+function merge_cell($old, $neu) { $people = people_of($old); foreach (people_of($neu) as $n) if (!in_array($n, $people, true)) $people[] = $n; $o = deep($neu); $o->people = $people;
+  $by = []; foreach ([$old, $neu] as $x) if (isset($x->by) && is_object($x->by)) foreach (get_object_vars($x->by) as $k => $v) $by[$k] = $v;
+  if ($by) { $o->by = new stdClass; foreach ($by as $k => $v) $o->by->{$k} = $v; } else unset($o->by);
+  return $o; }
 function apply_op($root, $op): bool { $p = $op->p; $ok = true;
   if (in_array($op->t, ['ins', 'add', 'rem'], true)) {
     $list = &ref_at($root, $p, $ok);
@@ -150,7 +153,7 @@ function apply_op($root, $op): bool { $p = $op->p; $ok = true;
 
 /* ---------- Was Helfer ändern dürfen ---------- */
 function helper_op($db, array $me, $op): string { $p = $op->p; $y = year_of($db); $self = find_helper($db, $me['id']);
-  // Felder im Plan: nur sich selbst und selbst angelegte Personen ein- und austragen
+  // Felder im Plan: sich selbst und alle aus der Helferliste eintragen. Austragen nur sich selbst, eigene Begleitung und wen man selbst eingetragen hat.
   if (($p[0] ?? '') === 'years' && ($p[1] ?? '') === (string)$db->active && ($p[2] ?? '') === 'shifts' && isset($p[3]) && $p[3][0] === '#' && ($p[4] ?? '') === 'cells' && count($p) >= 6) {
     $sh = null; foreach (($y->shifts ?? []) as $x) if (($x->id ?? '') === substr($p[3], 1)) { $sh = $x; break; }
     $st = null; foreach (($y->stations ?? []) as $x) if (($x->id ?? '') === $p[5]) { $st = $x; break; }
@@ -159,9 +162,12 @@ function helper_op($db, array $me, $op): string { $p = $op->p; $y = year_of($db)
     if (count($p) === 7 && $p[6] === 'people' && $op->t === 'add') { foreach ($op->v as $n) if (!in_array($n, $people, true)) $add[] = $n; }
     elseif (count($p) === 7 && $p[6] === 'people' && $op->t === 'rem') $rem = $op->v;
     elseif (count($p) === 6 && $op->t === 'set' && is_object($op->v) && isset($op->v->people) && is_array($op->v->people)) { foreach ($op->v->people as $n) if (is_string($n) && !in_array($n, $people, true)) $add[] = $n; }
+    elseif (count($p) >= 7 && $p[6] === 'by') return ''; // wer wen eingetragen hat, führt der Server selbst
     else return 'forbidden';
-    $own = own_names($db, $me['id']);
-    foreach (array_merge($add, $rem) as $n) if (!is_string($n) || !isset($own[nkey($n)])) return 'forbidden';
+    $own = own_names($db, $me['id']); $by = (is_object($cell) && isset($cell->by) && is_object($cell->by)) ? get_object_vars($cell->by) : [];
+    $known = plan_names($db); foreach ($db->helpers as $h) $known[nkey($h->name ?? '')] = true;
+    foreach ($add as $n) if (!is_string($n) || $n === '' || strlen($n) > 240 || !(isset($own[nkey($n)]) || isset($known[nkey($n)]))) return 'forbidden';
+    foreach ($rem as $n) if (!is_string($n) || !(isset($own[nkey($n)]) || (($by[$n] ?? null) === $me['id']))) return 'forbidden';
     if ($add) { if (is_object($cell) && !empty($cell->off)) return 'off';
       $min = max(1, (int)($st->min ?? 0) ?: 2); $max = max($min, (int)($st->max ?? 0) ?: $min);
       if (count($people) + count($add) > $max) return 'full'; }
@@ -169,8 +175,10 @@ function helper_op($db, array $me, $op): string { $p = $op->p; $y = year_of($db)
     if (!isset($sh->cells) || !is_object($sh->cells)) $sh->cells = new stdClass;
     if (!isset($sh->cells->{$p[5]}) || !is_object($sh->cells->{$p[5]})) { $c = new stdClass; $c->people = []; $c->note = ''; $c->off = false; $c->tentative = false; $sh->cells->{$p[5]} = $c; }
     $c = $sh->cells->{$p[5]}; if (!isset($c->people) || !is_array($c->people)) $c->people = [];
-    foreach ($add as $n) $c->people[] = $n;
-    foreach ($rem as $n) { $i = array_search($n, $c->people, true); if ($i !== false) array_splice($c->people, (int)$i, 1); }
+    if (!isset($c->by) || !is_object($c->by)) $c->by = new stdClass;
+    foreach ($add as $n) { $c->people[] = $n; if (!isset($own[nkey($n)])) $c->by->{$n} = $me['id']; }
+    foreach ($rem as $n) { $i = array_search($n, $c->people, true); if ($i !== false) array_splice($c->people, (int)$i, 1); unset($c->by->{$n}); }
+    if (!get_object_vars($c->by)) unset($c->by);
     return ''; }
   if (($p[0] ?? '') === 'helpers') {
     // weitere Person anlegen, für die man sich mit einträgt
@@ -215,7 +223,11 @@ function orga_op($db, $op): string { $p = $op->p;
     $db->codes->{$p[1]} = $v; return $p[1] === 'orga' ? 'pw' : ''; }
   if ($p[0] === 'active') { if (!(count($p) === 1 && $op->t === 'set' && is_string($op->v) && isset($db->years->{$op->v}) && is_object($db->years->{$op->v}))) return 'bad'; $db->active = $op->v; return ''; }
   if ($p[0] === 'years' && count($p) === 2 && $op->t === 'del') return 'forbidden';
-  return apply_op($db, $op) ? '' : 'gone'; }
+  if (!apply_op($db, $op)) return 'gone';
+  /* Wird jemand ausgetragen, verschwindet auch der Vermerk, wer ihn eingetragen hat */
+  if ($p[0] === 'years' && ($p[2] ?? '') === 'shifts' && ($p[4] ?? '') === 'cells' && count($p) >= 6) { $ok = true; $c = &ref_at($db, array_slice($p, 0, 6), $ok);
+    if ($ok && is_object($c) && isset($c->by) && is_object($c->by)) { $ppl = people_of($c); foreach (array_keys(get_object_vars($c->by)) as $n) if (!in_array((string)$n, $ppl, true)) unset($c->by->{$n}); if (!get_object_vars($c->by)) unset($c->by); } }
+  return ''; }
 
 /* ---------- Die Anfragen ---------- */
 try {

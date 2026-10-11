@@ -30,7 +30,8 @@ let fails = 0, n = 0; const ok = (c, l) => { n++; console.log((c ? 'ok      ' : 
   const open = await B.$$eval('button.cell.is-open', x => x.map(e => [e.dataset.s, e.dataset.t]));
   const [s1, t1] = open[0];
   await B.click('[data-s="' + s1 + '"][data-t="' + t1 + '"]'); await B.waitForSelector('#f-who');
-  ok((await B.$$eval('#f-who option', x => x.map(o => o.textContent).join(' | '))) === 'Mich (Astrid K.) | Weitere Person …', 'Auswahl «Wen möchtest du eintragen?»');
+  const who = await B.$$eval('#f-who option', x => x.map(o => o.textContent));
+  ok(who[0] === 'Mich (Astrid K.)' && who.includes('Assi') && who.includes('Susan F.') && who[who.length - 1] === 'Neue Person anlegen …' && who.length > 80, 'Auswahl «Wen möchtest du eintragen?» mit der ganzen Helferliste (' + who.length + ' Einträge)');
   await B.click('[data-d=join]'); await B.waitForTimeout(700); await B.click('[data-d=cancel]');
   ok((await cellText(B, s1, t1)).includes('Astrid K.'), 'B steht im Feld');
   await refresh(A);
@@ -48,11 +49,18 @@ let fails = 0, n = 0; const ok = (c, l) => { n++; console.log((c ? 'ok      ' : 
   ok((await B.$$eval('#f-who option', x => x.map(o => o.textContent).join(' | '))).startsWith('Mich (Astrid K.)'), 'danach kann B sich selbst dazu eintragen');
   await B.click('[data-d=cancel]');
   await B.click('[data-s="' + open[2][0] + '"][data-t="' + open[2][1] + '"]');
-  ok((await B.$$eval('#f-who option', x => x.map(o => o.textContent).join(' | '))) === 'Mich (Astrid K.) | Lena K. | Weitere Person …', 'Lena K. steht jetzt in der Auswahl');
+  ok((await B.$$eval('#f-who option', x => x.map(o => o.textContent).slice(0, 2).join(' | '))) === 'Mich (Astrid K.) | Lena K.', 'Lena K. steht jetzt oben in der Auswahl');
   await B.selectOption('#f-who', { label: 'Lena K.' }); await B.click('[data-d=join]'); await B.waitForTimeout(600);
   // und wieder austragen (zweimal tippen)
   await B.click('#dlg [data-d=leave]'); await B.click('#dlg [data-d=leave]'); await B.waitForTimeout(600); await B.click('[data-d=cancel]');
   ok(!(await cellText(B, open[2][0], open[2][1])).includes('Lena K.'), 'Lena K. ist dort wieder ausgetragen');
+  // jemanden aus der Helferliste per Auswahl eintragen, ohne etwas zu tippen
+  await B.click('[data-s="' + open[3][0] + '"][data-t="' + open[3][1] + '"]'); await B.selectOption('#f-who', 'n:Assi'); await B.click('[data-d=join]'); await B.waitForTimeout(700);
+  ok((await B.$$eval('#dlg .chips li', x => x.map(e => e.innerText.replace(/\s+/g, ' ').trim()).join(' | '))).includes('Assi ×'), 'Assi per Auswahl eingetragen, B kann den Eintrag wieder entfernen');
+  await B.click('[data-d=cancel]'); await refresh(A);
+  ok((await cellText(A, open[3][0], open[3][1])).includes('Assi'), 'A sieht Assi im Feld');
+  await B.click('[data-s="' + open[3][0] + '"][data-t="' + open[3][1] + '"]'); await B.click('#dlg [data-d=leave]'); await B.click('#dlg [data-d=leave]'); await B.waitForTimeout(600); await B.click('[data-d=cancel]');
+  ok(!(await cellText(B, open[3][0], open[3][1])).includes('Assi'), 'Assi ist wieder ausgetragen');
   await B.click('[data-tab=meine]'); await B.waitForTimeout(200);
   const meine = await B.$eval('#view', e => e.innerText);
   ok(/2 Schichten/.test(meine) && meine.includes('für Lena K.') && meine.includes('Von dir mit eingetragen: Lena K.'), '«Meine Schichten» zeigt beide');

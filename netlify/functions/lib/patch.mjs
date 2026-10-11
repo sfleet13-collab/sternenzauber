@@ -64,7 +64,8 @@ export function at(root, path) { let n = root; for (const s of path) { n = step(
 /* Felder im Plan: zwei gleichzeitige Einträge in ein noch leeres Feld dürfen sich nicht überschreiben. */
 function mergeCell(old, neu) { const people = (Array.isArray(old.people) ? old.people : []).slice();
   (Array.isArray(neu.people) ? neu.people : []).forEach(n => { if (!people.includes(n)) people.push(n); });
-  return Object.assign({}, neu, { people }); }
+  const by = Object.assign({}, isObj(old.by) ? old.by : {}, isObj(neu.by) ? neu.by : {}), out = Object.assign({}, neu, { people });
+  if (Object.keys(by).length) out.by = by; return out; }
 
 /* Schritt anwenden. Gibt false zurück, wenn das Ziel nicht (mehr) existiert. */
 export function applyOp(root, op) {

@@ -114,7 +114,7 @@ const grp = st => st.group || OTHER;
 const clock = ts => { const d = new Date(ts); return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0'); };
 
 function cellOf(sh, st) { const c = (sh.cells || {})[st.id] || {};
-  return { people: Array.isArray(c.people) ? c.people : [], note: c.note || '', off: !!c.off, tentative: !!c.tentative, bulk: !!c.bulk }; }
+  return { people: Array.isArray(c.people) ? c.people : [], note: c.note || '', off: !!c.off, tentative: !!c.tentative, bulk: !!c.bulk, by: c.by && typeof c.by === 'object' ? c.by : {} }; }
 function statusOf(sh, st) { const c = cellOf(sh, st), min = Math.max(1, Number(st.min) || 2), n = c.people.length;
   c.k = c.off ? 'off' : n === 0 ? 'open' : n < min ? 'part' : c.tentative ? 'tent' : 'ok';
   c.min = min; c.max = Math.max(min, Number(st.max) || min); c.missing = c.off ? 0 : Math.max(0, min - n); c.att = c.k === 'open' || c.k === 'part' || c.k === 'tent';
@@ -145,6 +145,9 @@ const isSosStation = st => st.sos === undefined ? /springer/i.test(st.name || ''
 function sosTeam(m) { const out = new Set(); m.people.forEach((p, k) => { if (p.slots.some(x => isSosStation(x.st))) out.add(k); }); return out; }
 function canHandle(m) { const me = meHelper(); return isOrga() || (!!me && (me.sos || sosTeam(m).has(key(me.name)))); }
 function setCell(sh, st, data) { const real = Y().shifts.find(s => s.id === sh.id); if (!real) return; real.cells = real.cells || {}; real.cells[st.id] = data; }
+/* Nur die Namen eines Felds ändern. by merkt sich, wer jemand anderen eingetragen hat: diese Person darf den Eintrag auch wieder entfernen. */
+function setPeople(sh, st, people, by) { const real = Y().shifts.find(x => x.id === sh.id); if (!real) return; real.cells = real.cells || {};
+  const next = Object.assign({ note: '', off: false, tentative: false }, real.cells[st.id] || {}, { people }); if (Object.keys(by).length) next.by = by; else delete next.by; real.cells[st.id] = next; }
 
 /* ---------- Rahmen ---------- */
 function tabsFor() { const h = meHelper();
@@ -270,7 +273,7 @@ function vPlan(m) {
   if (!dayShifts.some(s => s.id === S.shift)) S.shift = dayShifts[0].id;
   const cols = narrow ? dayShifts.filter(s => s.id === S.shift) : dayShifts;
   const sts = m.stations.filter(inGroup);
-  let h = '<div class="controls">' + '<p class="muted">' + (isOrga() ? 'Tippe auf ein Feld, um es zu bearbeiten oder einzeln zu sperren. Tippe auf eine Uhrzeit oder einen Stand, um mehrere Felder auf einmal zu sperren.' : 'Tippe auf ein Feld, um dich oder jemanden, den du mitbringst, einzutragen. Eure Schichten sind farbig markiert.') + '</p>'
+  let h = '<div class="controls">' + '<p class="muted">' + (isOrga() ? 'Tippe auf ein Feld, um es zu bearbeiten oder einzeln zu sperren. Tippe auf eine Uhrzeit oder einen Stand, um mehrere Felder auf einmal zu sperren.' : 'Tippe auf ein Feld, um dich oder jemanden aus der Helferliste einzutragen. Deine Schichten sind farbig markiert.') + '</p>'
     + '<div class="days" role="group" aria-label="Tag">' + m.days.map(d => { const i = dayInfo(d), n = attCount(m, m.shifts.filter(s => s.date === d));
     return '<button class="day" data-act="day" data-v="' + d + '" aria-pressed="' + (d === S.day) + '"><b>' + i.wd + ' ' + i.dm + '</b><small>' + (n ? n + ' offen' : '<span class="star">★</span> komplett besetzt') + '</small></button>'; }).join('') + '</div>' + groupChips(m);
   h += '<div class="row" style="justify-content:flex-end"><button class="btn" data-act="pdf">Plan als PDF</button></div>';
@@ -333,9 +336,11 @@ function showIcs(slots) {
 function vMeine(m) {
   const me = meHelper(), mine = myPeople(), rows = [];
   mine.forEach(h => { const P = m.people.get(key(h.name)); if (P) P.slots.forEach(s => rows.push({ s, h })); });
+  /* auch Einträge, die ich für andere aus der Helferliste gemacht habe */
+  if (me) m.shifts.forEach(sh => m.stations.forEach(st => { const c = cellOf(sh, st); if (c.off) return; c.people.forEach(p => { if (c.by[p] === me.id && !m.mine.has(key(p))) rows.push({ s: { sh, st, c }, h: { id: '', name: p } }); }); }));
   rows.sort((a, b) => (a.s.sh.date + a.s.sh.start).localeCompare(b.s.sh.date + b.s.sh.start));
   const own = me ? m.people.get(key(me.name)) : null, guests = mine.length > 1 ? '<p class="muted">Von dir mit eingetragen: ' + esc(mine.slice(1).map(h => h.name).join(', ')) + '</p>' : '';
-  if (!rows.length) return '<div class="empty"><h2>Du hast noch keine Schicht</h2><p class="muted">Tippe im Plan auf ein offenes Feld und trag dich ein. Dort kannst du auch weitere Personen mit eintragen.</p>' + guests + '<p class="row" style="margin-top:14px"><button class="btn primary" data-act="goto" data-v="plan">Zum Plan</button><button class="btn" data-act="profile">Meine Daten</button></p></div>';
+  if (!rows.length) return '<div class="empty"><h2>Du hast noch keine Schicht</h2><p class="muted">Tippe im Plan auf ein offenes Feld und trag dich ein. Dort kannst du auch andere aus der Helferliste eintragen.</p>' + guests + '<p class="row" style="margin-top:14px"><button class="btn primary" data-act="goto" data-v="plan">Zum Plan</button><button class="btn" data-act="profile">Meine Daten</button></p></div>';
   return '<div class="controls"><div class="row"><p class="muted" style="flex:1 1 200px">' + rows.length + (rows.length === 1 ? ' Schicht' : ' Schichten') + (own ? ' · du selbst ' + hours(own.mins) : '') + '</p>' + (own ? '<button class="btn" data-act="cal-all">Alle in den Kalender</button><button class="btn" data-act="copy-mine">Als Text kopieren</button>' : '') + '<button class="btn" data-act="profile">Meine Daten</button></div>' + guests + '</div>'
     + '<ul class="list">' + rows.map(({ s, h }) => { const i = dayInfo(s.sh.date), mates = s.c.people.filter(x => key(x) !== key(h.name)), self = h.id === me.id;
       return '<li><div class="item"><span class="main"><b>' + esc(s.st.name) + '</b>' + (self ? '' : ' <span class="pill plain">für ' + esc(h.name) + '</span>') + '<small><span class="mono">' + i.wd + ' ' + i.dm + ' ' + esc(span(s.sh)) + '</span>' + (s.st.place ? ' · ' + esc(s.st.place) : '') + (mates.length ? ' · mit ' + esc(mates.join(', ')) : '') + '</small></span>' + (self ? calRow(s.sh, s.st) : '') + '</div></li>'; }).join('') + '</ul>';
@@ -489,25 +494,33 @@ function drawDlg() {
       + '<label class="check"><input type="checkbox" id="f-tent"' + (D.tentative ? ' checked' : '') + '><span>Zusage ist noch nicht bestätigt</span></label>'
       + '<label class="check"><input type="checkbox" id="f-off"' + (D.off ? ' checked' : '') + '><span>Gesperrt: hier kann sich niemand eintragen</span></label>'
       + field('f-note', 'Notiz', 'placeholder="z. B. Tagesbeginn oder Vorstellung 18:00–20:00"', D.note) + foot();
-  } else if (D.type === 'hcell') { const i = dayInfo(D.sh.date), c = statusOf(D.sh, D.st), me = meHelper(), mine = myPeople();
-    const inCell = mine.filter(x => c.people.some(p => key(p) === key(x.name))), free = mine.filter(x => !inCell.includes(x)), full = c.people.length >= c.max;
-    if (!D.who || (D.who !== '+' && !free.some(x => x.id === D.who))) D.who = free.length ? free[0].id : '+';
-    const sure = D.sure ? inCell.find(x => x.id === D.sure) : null;
+  } else if (D.type === 'hcell') { const i = dayInfo(D.sh.date), c = statusOf(D.sh, D.st), me = meHelper(), mine = myPeople(), inKeys = new Set(c.people.map(key));
+    const free = mine.filter(x => !inKeys.has(key(x.name))), full = c.people.length >= c.max, seen = new Set(mine.map(x => key(x.name)));
+    const others = []; [...m.people.values()].map(p => p.name).concat(DB.helpers.map(x => x.name)).forEach(n => { const k = key(n); if (!k || seen.has(k)) return; seen.add(k); if (!inKeys.has(k)) others.push(n); });
+    others.sort((a, b) => a.localeCompare(b, 'de'));
+    const okWho = w => w === '+' || (w.slice(0, 2) === 'i:' && free.some(x => x.id === w.slice(2))) || (w.slice(0, 2) === 'n:' && others.includes(w.slice(2)));
+    if (!D.who || !okWho(D.who)) D.who = free.length ? 'i:' + free[0].id : '';
+    const removable = p => m.mine.has(key(p)) || c.by[p] === me.id, anyRem = c.people.some(removable);
     h += '<header><p class="eyebrow">' + i.wdl + ', ' + i.dm + ' · ' + esc(span(D.sh)) + '</p><h2 id="dlg-title">' + esc(D.st.name) + '</h2><p class="muted">' + esc([D.st.place, D.st.sub, 'Bedarf ' + needText(D.st)].filter(Boolean).join(' · ')) + '</p></header>'
-      + '<div class="field"><span class="lab">Eingetragen</span>' + (c.people.length ? '<ul class="chips">' + c.people.map(p => { const own = inCell.find(x => key(x.name) === key(p));
-          return own ? '<li><span>' + esc(p) + '</span><button type="button" data-d="leave" data-v="' + esc(own.id) + '" aria-label="' + esc(p) + ' austragen">×</button></li>' : '<li class="ro"><span>' + esc(p) + '</span></li>'; }).join('') + '</ul>' : '<p class="muted">Noch niemand.</p>')
-      + (sure ? '<p class="hint warn">Tippe noch einmal auf ×, um ' + (sure.id === me.id ? 'dich' : esc(sure.name)) + ' auszutragen.</p>' : inCell.length ? '<p class="hint">Mit × trägst du ' + (inCell.length === 1 && inCell[0].id === me.id ? 'dich' : 'jemanden') + ' wieder aus.</p>' : '')
+      + '<div class="field"><span class="lab">Eingetragen</span>' + (c.people.length ? '<ul class="chips">' + c.people.map(p => removable(p)
+          ? '<li><span>' + esc(p) + '</span><button type="button" data-d="leave" data-v="' + esc(p) + '" aria-label="' + esc(p) + ' austragen">×</button></li>' : '<li class="ro"><span>' + esc(p) + '</span></li>').join('') + '</ul>' : '<p class="muted">Noch niemand.</p>')
+      + (D.sure && c.people.includes(D.sure) ? '<p class="hint warn">Tippe noch einmal auf ×, um ' + (key(D.sure) === key(me.name) ? 'dich' : esc(D.sure)) + ' auszutragen.</p>' : anyRem ? '<p class="hint">Mit × trägst du dich oder jemanden, den du eingetragen hast, wieder aus.</p>' : '')
       + (c.note ? '<p class="hint">' + esc(c.note) + '</p>' : '') + '</div>';
-    if (inCell.some(x => x.id === me.id)) h += '<div class="field"><span class="lab">Deine Schicht in den Kalender übernehmen</span>' + calRow(D.sh, D.st) + '</div>';
+    if (inKeys.has(key(me.name))) h += '<div class="field"><span class="lab">Deine Schicht in den Kalender übernehmen</span>' + calRow(D.sh, D.st) + '</div>';
     if (c.off) h += '<p class="hint">Diese Schicht ist gesperrt.</p><footer><button type="button" class="btn primary" data-d="cancel">Zurück</button></footer>';
-    else if (full) h += '<p class="hint">Diese Schicht ist voll besetzt. Schau bei einer anderen Schicht oder einem anderen Stand.</p><footer><button type="button" class="btn primary" data-d="cancel">' + (inCell.length ? 'Fertig' : 'Zurück') + '</button></footer>';
-    else { h += '<div class="field"><label for="f-who">Wen möchtest du eintragen?</label><select id="f-who">' + free.map(x => '<option value="' + esc(x.id) + '"' + (D.who === x.id ? ' selected' : '') + '>' + (x.id === me.id ? 'Mich (' + esc(x.name) + ')' : esc(x.name)) + '</option>').join('') + '<option value="+"' + (D.who === '+' ? ' selected' : '') + '>Weitere Person …</option></select></div>';
+    else if (full) h += '<p class="hint">Diese Schicht ist voll besetzt. Schau bei einer anderen Schicht oder einem anderen Stand.</p><footer><button type="button" class="btn primary" data-d="cancel">' + (anyRem ? 'Fertig' : 'Zurück') + '</button></footer>';
+    else { const opt = (v, label) => '<option value="' + esc(v) + '"' + (D.who === v ? ' selected' : '') + '>' + label + '</option>';
+      h += '<div class="field"><label for="f-who">Wen möchtest du eintragen?</label><select id="f-who">' + (D.who === '' ? '<option value="" selected disabled>Bitte wählen …</option>' : '')
+        + free.map(x => opt('i:' + x.id, x.id === me.id ? 'Mich (' + esc(x.name) + ')' : esc(x.name))).join('')
+        + (others.length ? '<optgroup label="Aus der Helferliste">' + others.map(n => opt('n:' + n, esc(n))).join('') + '</optgroup>' : '')
+        + opt('+', 'Neue Person anlegen …') + '</select></div>';
       if (D.who === '+') h += '<div class="two">' + field('f-cfirst', 'Vorname', 'required autocomplete="off"', D.cf || '') + field('f-clast', 'Nachname', 'required autocomplete="off"', D.cl || '') + '</div>'
         + field('f-cphone', 'Handynummer (freiwillig)', 'type="tel" inputmode="tel" autocomplete="off" placeholder="z. B. 0171 2345678"', D.cp || '')
         + (D.cands ? '<div class="field"><label for="f-ccand">Steht die Person schon im Plan?</label><select id="f-ccand"><option value="">Nein, neu eintragen</option>' + D.cands.map(n => '<option value="' + esc(n) + '">Ja, als «' + esc(n) + '»</option>').join('') + '</select></div>' : '')
-        + '<p class="hint">Du trägst diese Person mit ein und kannst sie auch wieder austragen. Sie braucht keine eigene Anmeldung und steht danach in deiner Auswahl.</p>';
-      else { const t = free.find(x => x.id === D.who); h += cellWarn(m, t.name, t.id === me.id); }
-      h += '<p class="hint warn" id="f-err" hidden></p><footer><button type="button" class="btn" data-d="cancel">' + (inCell.length ? 'Fertig' : 'Abbrechen') + '</button><button type="button" class="btn primary" data-d="join">Eintragen</button></footer>'; }
+        + '<p class="hint">Nur für Personen, die noch nicht in der Liste stehen. Danach findest du sie in der Auswahl.</p>';
+      else if (D.who.slice(0, 2) === 'i:') { const t = free.find(x => x.id === D.who.slice(2)); h += cellWarn(m, t.name, t.id === me.id); }
+      else if (D.who.slice(0, 2) === 'n:') h += cellWarn(m, D.who.slice(2), false);
+      h += '<p class="hint warn" id="f-err" hidden></p><footer><button type="button" class="btn" data-d="cancel">' + (anyRem ? 'Fertig' : 'Abbrechen') + '</button><button type="button" class="btn primary" data-d="join">Eintragen</button></footer>'; }
   } else if (D.type === 'station') { const st = D.st || {};
     h += '<header><h2 id="dlg-title">' + (D.st ? 'Stand bearbeiten' : 'Stand hinzufügen') + '</h2></header>'
       + field('f-sname', 'Name', 'required placeholder="z. B. Waffelhütte"', st.name) + field('f-ssub', 'Angebot oder Aufgabe', 'placeholder="z. B. Waffeln, Kakao"', st.sub)
@@ -592,26 +605,30 @@ dlg.addEventListener('click', e => {
       else if (a === 'unblock' && c.off && c.bulk) { const raw = (sh.cells || {})[st.id] || {}; setCell(sh, st, { people: [], note: raw.was || '', off: false, tentative: false }); n++; } });
     return done(n + (n === 1 ? ' Feld ' : ' Felder ') + (a === 'block' ? 'gesperrt' : 'freigegeben')); }
   if (a === 'pdf-share') { try { navigator.share({ files: [D.file], title: D.label }).catch(() => {}); } catch (x) {} return; }
-  if (a === 'join') { const me = meHelper(), c = statusOf(D.sh, D.st); if (!me || c.off || c.people.length >= c.max) { drawDlg(); return; }
-    let target;
-    if (D.who === '+') { const first = val('f-cfirst'), last = val('f-clast'), phone = val('f-cphone').replace(/[^\d+]/g, '');
+  if (a === 'join') { const me = meHelper(), m = model(), c = statusOf(D.sh, D.st); if (!me || c.off || c.people.length >= c.max) { drawDlg(); return; }
+    let name = '', self = false; const w = D.who || '';
+    if (w === '+') { const first = val('f-cfirst'), last = val('f-clast'), phone = val('f-cphone').replace(/[^\d+]/g, '');
       if (!first || !last) return fail('Bitte Vorname und Nachname eintragen.');
       if (phone && phone.replace(/\D/g, '').length < 6) return fail('Bitte eine gültige Handynummer eintragen oder das Feld leer lassen.');
       if (D.cands && (first !== D.cf || last !== D.cl)) D.cands = null;
       if (!D.cands) { const cands = candidates(first, last); D.cf = first; D.cl = last; D.cp = phone;
         if (cands.length) { D.cands = cands; drawDlg(); fail('Bitte wähle, ob die Person schon im Plan steht, und tippe dann noch einmal auf «Eintragen».'); return; } }
-      const name = (D.cands && val('f-ccand')) || dnFor(first, last);
-      if (DB.helpers.some(x => key(x.name) === key(name))) return fail('«' + name + '» ist schon angemeldet und trägt sich selbst ein. Die Orga kann das auch übernehmen.');
+      name = (D.cands && val('f-ccand')) || dnFor(first, last);
+      if (DB.helpers.some(x => key(x.name) === key(name))) return fail('«' + name + '» steht schon in der Helferliste. Wähle die Person oben in der Auswahl aus.');
       if (c.people.some(p => key(p) === key(name))) return fail('«' + name + '» ist in dieser Schicht schon eingetragen.');
-      target = { id: rid('h'), first, last, phone, email: '', again: false, name, sos: false, by: me.id, at: Date.now() }; DB.helpers.push(target);
-    } else target = myPeople().find(x => x.id === D.who);
-    if (!target || c.people.some(p => key(p) === key(target.name))) { drawDlg(); return; }
-    setCell(D.sh, D.st, { people: c.people.concat(target.name), note: c.note, off: false, tentative: c.tentative });
-    S.thanks = true; D = { type: 'hcell', sh: D.sh, st: D.st }; persist(); render(); toast(target.id === me.id ? 'Du bist eingetragen' : target.name + ' ist eingetragen'); refreshDlg(); drawDlg(); return; }
-  if (a === 'leave') { const who = myPeople().find(x => x.id === b.dataset.v); if (!who) return;
-    if (D.sure !== who.id) { D.sure = who.id; drawDlg(); return; }
-    const c = statusOf(D.sh, D.st); setCell(D.sh, D.st, { people: c.people.filter(p => key(p) !== key(who.name)), note: c.note, off: c.off, tentative: c.tentative });
-    D = { type: 'hcell', sh: D.sh, st: D.st }; persist(); render(); toast(who.id === ME.id ? 'Du bist ausgetragen' : who.name + ' ist ausgetragen'); refreshDlg(); drawDlg(); return; }
+      DB.helpers.push({ id: rid('h'), first, last, phone, email: '', again: false, name, sos: false, by: me.id, at: Date.now() });
+    } else if (w.slice(0, 2) === 'i:') { const t = myPeople().find(x => x.id === w.slice(2)); if (t) { name = t.name; self = t.id === me.id; } }
+    else if (w.slice(0, 2) === 'n:') name = w.slice(2);
+    if (!name) return fail('Bitte wähle, wen du eintragen möchtest.');
+    if (c.people.some(p => key(p) === key(name))) { drawDlg(); return; }
+    const by = Object.assign({}, c.by); if (w.slice(0, 2) === 'n:') by[name] = me.id;
+    setPeople(D.sh, D.st, c.people.concat(name), by);
+    S.thanks = true; D = { type: 'hcell', sh: D.sh, st: D.st }; persist(); render(); toast(self ? 'Du bist eingetragen' : name + ' ist eingetragen'); refreshDlg(); drawDlg(); return; }
+  if (a === 'leave') { const me = meHelper(), m = model(), c = statusOf(D.sh, D.st), name = b.dataset.v; if (!me || !c.people.includes(name) || !(m.mine.has(key(name)) || c.by[name] === me.id)) return;
+    if (D.sure !== name) { D.sure = name; drawDlg(); return; }
+    const by = Object.assign({}, c.by); delete by[name];
+    setPeople(D.sh, D.st, c.people.filter(p => p !== name), by);
+    D = { type: 'hcell', sh: D.sh, st: D.st }; persist(); render(); toast(key(name) === key(me.name) ? 'Du bist ausgetragen' : name + ' ist ausgetragen'); refreshDlg(); drawDlg(); return; }
   if (a === 'del') { if (!D.sure) { D.sure = true; b.textContent = D.type === 'shift' ? 'Samt Besetzung löschen?' : 'Wirklich löschen?'; return; }
     const y = Y(); if (D.type === 'shift') y.shifts = y.shifts.filter(s => s.id !== D.sh.id); else y.stations = y.stations.filter(s => s.id !== D.st.id);
     done(D.type === 'shift' ? 'Schicht gelöscht' : 'Stand gelöscht'); }
@@ -626,7 +643,9 @@ dlg.addEventListener('submit', e => {
     /* Hat sich inzwischen jemand eingetragen, bleibt der Name erhalten: nur die eigenen Änderungen zählen */
     const now = cellOf(D.sh, D.st).people, orig = D.orig || now, gone = orig.filter(p => !D.people.includes(p)), people = now.filter(p => !gone.includes(p));
     D.people.forEach(p => { if (!orig.includes(p) && !people.some(x => key(x) === key(p))) people.push(p); });
-    setCell(D.sh, D.st, { people, note: D.note, off: D.off, tentative: D.tentative && people.length > 0 }); return done('Gespeichert'); }
+    const data = { people, note: D.note, off: D.off, tentative: D.tentative && people.length > 0 }, was = cellOf(D.sh, D.st).by, by = {};
+    Object.keys(was).forEach(n => { if (people.includes(n)) by[n] = was[n]; }); if (Object.keys(by).length) data.by = by;
+    setCell(D.sh, D.st, data); return done('Gespeichert'); }
   if (D.type === 'pdf') { const group = $('#f-pgroup').value, day = $('#f-pday').value, f = e.target; lock(f, true);
     makePdf(group, day).then(r => { const name = 'sternenzauber-plan' + (group === 'all' ? '' : '-' + slug(group)) + (day === 'all' ? '' : '-' + day) + '.pdf';
       let file = null, share = false; try { file = new File([r.blob], name, { type: 'application/pdf' }); share = !!navigator.canShare && navigator.canShare({ files: [file] }); } catch (x) {}

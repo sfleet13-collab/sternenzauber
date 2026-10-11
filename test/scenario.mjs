@@ -67,6 +67,22 @@ for (const op of [{ t: 'set', p: ['codes', 'orga'], v: 'gehackt123' }, { t: 'set
   const r = await call('POST', 'patch', { ops: [op] }, A); ok(r.status === 200 && r.body.rejected.length === 1, 'Helfer-Änderung abgelehnt: ' + op.p.join('/')); }
 ok(raw().codes.orga === PW && !raw().helpers.find(h => h.id === aId).role, 'Stand ist unverändert');
 
+// --- Jemanden aus der Helferliste eintragen: geht für alle bekannten Namen, wieder austragen darf nur, wer eingetragen hat (und die Orga)
+const known = other[2], kc = cellPath(SH[4].id, ST[2].id);
+await call('POST', 'patch', { ops: [{ t: 'set', p: ['years', '2026', 'stations', '#' + ST[2].id, 'max'], v: 12 }, { t: 'set', p: kc.concat('off'), v: false }] }, O);
+const k0 = (((raw().years['2026'].shifts.find(x => x.id === SH[4].id).cells || {})[ST[2].id] || {}).people || []).filter(n => n !== known);
+await call('POST', 'patch', { ops: [{ t: 'rem', p: kc.concat('people'), v: [known] }] }, O);
+const k1 = await call('POST', 'patch', { ops: [{ t: 'add', p: kc.concat('people'), v: [known, 'Susan F.'] }, { t: 'set', p: kc.concat('by'), v: { [known]: 'gefaelscht' } }] }, A);
+const kcell = () => raw().years['2026'].shifts.find(x => x.id === SH[4].id).cells[ST[2].id];
+ok(k1.body.rejected.length === 0 && kcell().people.includes(known) && kcell().people.includes('Susan F.') && kcell().by[known] === aId && kcell().by['Susan F.'] === aId, 'Helferin trägt Personen aus der Helferliste ein, der Server merkt sich, wer es war');
+const lx = await call('POST', 'login', { code: CODE }), rx = await call('POST', 'register', { first: 'Xaver', last: 'Fremd', phone: '0170 7770001', email: 'x@beispiel.de' }, lx.body.token);
+ok((await call('POST', 'patch', { ops: [{ t: 'rem', p: kc.concat('people'), v: [known] }] }, rx.body.token)).body.rejected[0] === 'forbidden' && kcell().people.includes(known), 'ein Dritter kann diesen Eintrag nicht entfernen');
+ok((await call('POST', 'patch', { ops: [{ t: 'rem', p: kc.concat('people'), v: ['Susan F.'] }] }, O)).body.rejected.length === 0 && !kcell().people.includes('Susan F.') && !('Susan F.' in (kcell().by || {})), 'trägt die Orga jemanden aus, verschwindet auch der Vermerk');
+await call('POST', 'patch', { ops: [{ t: 'add', p: kc.concat('people'), v: ['Xaver F.'] }] }, A);
+ok(kcell().by['Xaver F.'] === aId && (await call('POST', 'patch', { ops: [{ t: 'rem', p: kc.concat('people'), v: ['Xaver F.'] }] }, rx.body.token)).body.rejected.length === 0 && !kcell().people.includes('Xaver F.'), 'wer eingetragen wurde, kann sich selbst wieder austragen');
+ok((await call('POST', 'patch', { ops: [{ t: 'rem', p: kc.concat('people'), v: [known] }] }, A)).body.rejected.length === 0 && !kcell().people.includes(known) && !kcell().by, 'wer eingetragen hat, kann den Eintrag wieder entfernen');
+ok(JSON.stringify(kcell().people) === JSON.stringify(k0), 'die übrigen Einträge im Feld sind unverändert');
+
 // --- Weitere Person mit eintragen
 const comp = { id: 'hbegleit01', first: 'Lena', last: 'König', phone: '', name: 'Lena K.', by: 'egal', role: 'orga', sos: true };
 await call('POST', 'patch', { ops: [{ t: 'set', p: ['years', '2026', 'stations', '#' + st1, 'max'], v: 9 }, { t: 'set', p: cellPath(SH[1].id, st1).concat('off'), v: false }] }, O);
@@ -102,7 +118,7 @@ const l2 = await call('POST', 'login', { code: CODE });
 const back = await call('POST', 'register', { first: 'astrid', last: 'König', phone: '+49 171 2345678', email: 'neu@beispiel.de', check: true }, l2.body.token);
 ok(back.status === 200 && back.body.back && back.body.me.id === aId, 'gleiche Nummer in anderer Schreibweise: gleiche Person');
 ok((await call('POST', 'register', { first: 'Bernd', last: 'X', phone: '01712345678', email: 'b@beispiel.de', check: true }, l2.body.token)).status === 409, 'fremde Nummer mit anderem Vornamen wird abgelehnt');
-ok(raw().helpers.filter(h => !h.by).length === 2, 'keine doppelten Einträge');
+ok(raw().helpers.filter(h => !h.by).length === 3, 'keine doppelten Einträge');
 
 // --- Im Plan vorhandenen Namen übernehmen
 const l3 = await call('POST', 'login', { code: CODE });

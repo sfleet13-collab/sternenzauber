@@ -3,7 +3,7 @@
    Aufruf: python3 src/build.py"""
 import os, re, json, base64
 
-VERSION = '11.10.2026 d'
+VERSION = '11.10.2026 e'
 # Startwerte beim allerersten Aufruf. Danach gelten die Zugänge, die die Orga in der App unter «Einrichten» festlegt.
 START_CODES = {'helper': 'STERN2026', 'orga': 'Zimtstern-Bratapfel-58'}
 ORGA_NOTE = 'Orga-Team: Juri, Assi, Nina, Magnus und Susan.'
@@ -25,7 +25,7 @@ def module(code, name, exports, pre=''):
     code = re.sub(r'^import .*$', '', code, flags=re.M); code = re.sub(r'^export ', '', code, flags=re.M)
     return 'const %s = (() => {\n%s%s\nreturn { %s };\n})();' % (name, pre, code, ', '.join(exports))
 PATCH = module(rd('netlify', 'functions', 'lib', 'patch.mjs'), 'PATCH', ['diff', 'applyOps', 'applyOp', 'validOp', 'at', 'clone'])
-CORE = module(rd('netlify', 'functions', 'lib', 'core.mjs'), 'CORE', ['handle'], 'const { applyOp, validOp } = PATCH;\n')
+CORE = module(rd('netlify', 'functions', 'lib', 'core.mjs'), 'CORE', ['handle'], 'const { applyOp, validOp, at } = PATCH;\n')
 
 def script(remote, standalone, logo, api='netlify'):
     js = app.replace('__STARS__', stars).replace('__VERSION__', VERSION)

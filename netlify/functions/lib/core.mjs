@@ -3,7 +3,7 @@
 
    store: { get() -> {data, etag} | null, set(data, {isNew} | {etag}) -> true/false, secret() -> Text,
             lock() -> Funktion zum Freigeben (optional), backup(tag, data) (optional), delay (optional) } */
-import { applyOp, validOp } from './patch.mjs';
+import { applyOp, validOp, at } from './patch.mjs';
 
 const isObj = x => x !== null && typeof x === 'object' && !Array.isArray(x);
 const key = n => String(n == null ? '' : n).trim().toLowerCase();
@@ -86,7 +86,7 @@ function view(db, me) {
 /* ---------- Was Helfer ändern dürfen ---------- */
 function helperOp(db, me, op) {
   const p = op.p, y = yearOf(db), self = db.helpers.find(h => h.id === me.id);
-  // Felder im Plan: nur sich selbst und selbst angelegte Personen ein- und austragen
+  // Felder im Plan: sich selbst und alle aus der Helferliste eintragen. Austragen nur sich selbst, eigene Begleitung und wen man selbst eingetragen hat.
   if (p[0] === 'years' && p[1] === db.active && p[2] === 'shifts' && String(p[3]).charAt(0) === '#' && p[4] === 'cells' && p.length >= 6) {
     const sh = (y.shifts || []).find(s => s.id === p[3].slice(1)), st = (y.stations || []).find(s => s.id === p[5]);
     if (!sh || !st) return 'gone';
@@ -95,9 +95,11 @@ function helperOp(db, me, op) {
     if (p.length === 7 && p[6] === 'people' && op.t === 'add') add = op.v.filter(n => !people.includes(n));
     else if (p.length === 7 && p[6] === 'people' && op.t === 'rem') rem = op.v;
     else if (p.length === 6 && op.t === 'set' && isObj(op.v) && Array.isArray(op.v.people)) add = op.v.people.filter(n => typeof n === 'string' && !people.includes(n));
+    else if (p.length >= 7 && p[6] === 'by') return ''; // wer wen eingetragen hat, führt der Server selbst
     else return 'forbidden';
-    const own = ownNames(db, me.id);
-    if (!add.concat(rem).every(n => typeof n === 'string' && own.has(key(n)))) return 'forbidden';
+    const own = ownNames(db, me.id), by = isObj(cell.by) ? cell.by : {}, known = planNames(db); db.helpers.forEach(h => known.set(key(h.name), h.name));
+    if (!add.every(n => typeof n === 'string' && n.length <= 80 && (own.has(key(n)) || known.has(key(n))))) return 'forbidden';
+    if (!rem.every(n => typeof n === 'string' && (own.has(key(n)) || by[n] === me.id))) return 'forbidden';
     if (add.length) { if (cell.off) return 'off';
       const min = Math.max(1, Number(st.min) || 2), max = Math.max(min, Number(st.max) || min);
       if (people.length + add.length > max) return 'full'; }
@@ -105,7 +107,10 @@ function helperOp(db, me, op) {
     if (!isObj(sh.cells)) sh.cells = {};
     if (!isObj(sh.cells[p[5]])) sh.cells[p[5]] = { people: [], note: '', off: false, tentative: false };
     const c = sh.cells[p[5]]; if (!Array.isArray(c.people)) c.people = [];
-    add.forEach(n => c.people.push(n)); rem.forEach(n => { const i = c.people.indexOf(n); if (i >= 0) c.people.splice(i, 1); });
+    if (!isObj(c.by)) c.by = {};
+    add.forEach(n => { c.people.push(n); if (!own.has(key(n))) c.by[n] = me.id; });
+    rem.forEach(n => { const i = c.people.indexOf(n); if (i >= 0) c.people.splice(i, 1); delete c.by[n]; });
+    if (!Object.keys(c.by).length) delete c.by;
     return '';
   }
   if (p[0] === 'helpers') {
@@ -153,7 +158,11 @@ function orgaOp(db, op) {
     db.codes[p[1]] = v; return p[1] === 'orga' ? 'pw' : ''; }
   if (p[0] === 'active') { if (!(p.length === 1 && op.t === 'set' && typeof op.v === 'string' && isObj(db.years[op.v]))) return 'bad'; db.active = op.v; return ''; }
   if (p[0] === 'years' && p.length === 2 && op.t === 'del') return 'forbidden';
-  return applyOp(db, op) ? '' : 'gone';
+  if (!applyOp(db, op)) return 'gone';
+  /* Wird jemand ausgetragen, verschwindet auch der Vermerk, wer ihn eingetragen hat */
+  if (p[0] === 'years' && p[2] === 'shifts' && p[4] === 'cells' && p.length >= 6) { const c = at(db, p.slice(0, 6));
+    if (isObj(c) && isObj(c.by)) { const ppl = Array.isArray(c.people) ? c.people : []; Object.keys(c.by).forEach(n => { if (!ppl.includes(n)) delete c.by[n]; }); if (!Object.keys(c.by).length) delete c.by; } }
+  return '';
 }
 
 /* ---------- Die vier Anfragen ---------- */
