@@ -571,7 +571,12 @@ const isSosStation = st => st.sos === undefined ? /springer/i.test(st.name || ''
 function sosTeam(m) { const out = new Set(); m.people.forEach((p, k) => { if (p.slots.some(x => isSosStation(x.st))) out.add(k); }); return out; }
 /* namentlich benannte SOS-Empfänger: die Orga pflegt die Liste unter «Einrichten». Gilt, sobald sich die Person mit diesem Namen anmeldet. */
 const sosNames = () => { const l = (Y().info || {}).sosNames; return Array.isArray(l) ? l : []; };
-const sosNamed = h => { const l = sosNames().map(key); return !!h && (l.includes(key(h.name)) || l.includes(key((h.first || '') + ' ' + (h.last || '')))); };
+/* Passt ein Helfer zu einem Namen der SOS-Liste? Nur ein Vorname passt auf alle mit diesem Vornamen, «Vorname Nachname» auf beide Namen oder auf die Kurzform «Vorname N.». */
+const sosMatch = (h, entry) => { const k = key(entry).replace(/\s+/g, ' '), nm = key(h.name || '').replace(/\s+/g, ' '), full = key((h.first || '') + ' ' + (h.last || '')).replace(/\s+/g, ' ');
+  if (!k) return false; if (k === nm || k === full) return true;
+  const w = k.split(' '), f1 = (key(h.first || '') || nm).split(' ')[0]; if (w.length === 1) return w[0] === f1;
+  const hl = key(h.last || '') || nm.split(' ').slice(1).join(' '), ini = hl.replace(/\./g, ''); return !h.last && w[0] === f1 && ini.length === 1 && w[w.length - 1].charAt(0) === ini; };
+const sosNamed = h => !!h && sosNames().some(e => sosMatch(h, e));
 function canHandle(m) { const me = meHelper(); return isOrga() || (!!me && (me.sos || sosNamed(me) || sosTeam(m).has(key(me.name)))); }
 function setCell(sh, st, data) { const real = Y().shifts.find(s => s.id === sh.id); if (!real) return; real.cells = real.cells || {}; real.cells[st.id] = data; }
 /* Nur die Namen eines Felds ändern. by merkt sich, wer jemand anderen eingetragen hat: diese Person darf den Eintrag auch wieder entfernen. */
