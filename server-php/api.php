@@ -15,6 +15,9 @@ const SZ_DIR = __DIR__ . '/daten';
 const SZ_GUARD = "<?php http_response_code(404); exit; ?>\n";   // erste Zeile jeder Datendatei: ein direkter Aufruf zeigt nichts
 const SZ_JSON = JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES;
 const SZ_IDRE = '/^[a-z0-9]{4,24}$/';
+const SZ_MIG = 1;   // Stand der einmaligen Anpassungen an bestehenden Daten
+const SZ_MIG1_SOS = ['Nina Blasberg', 'Julian Richter', 'Magnus', 'Melli Schittek', 'Frank Blasberg', 'Betsy Arens', 'Saskia Melis'];
+const SZ_MIG1_NOTE = 'Orga-Team: Nina B., Julian R., Astrid und Susan.';
 const SZ_MAILRE = '/^[^\s@]+@[^\s@]+\.[^\s@]+$/u';
 
 class Halt extends Exception { public function __construct(public int $status, public string $err) { parent::__construct($err); } }
@@ -56,7 +59,18 @@ function seed() { $f = __DIR__ . '/start.php'; $t = @file_get_contents($f); if (
 function load(bool $locked = false) { $db = read_data('db');
   if ($db === null) { $free = $locked ? null : lock(); try { $db = read_data('db'); if ($db === null) { $db = seed(); write_data('db', $db); } } finally { if ($free) $free(); } }
   if (!is_object($db) || !isset($db->years) || !is_object($db->years)) throw new Halt(500, 'storage');
+  if ((int)($db->mig ?? 0) < SZ_MIG) { $free = $locked ? null : lock();
+    try { if (!$locked) { $again = read_data('db'); if (is_object($again) && isset($again->years)) $db = $again; }
+      if (migrate($db)) { $db->rev = (int)($db->rev ?? 0) + 1; write_data('db', $db); } } finally { if ($free) $free(); } }
   return $db; }
+/* Bestehende Daten an eine neue Fassung anpassen, ohne Einträge anzufassen. Läuft je Stufe genau einmal. */
+function migrate($db): bool { $v = (int)($db->mig ?? 0); if ($v >= SZ_MIG) return false;
+  if ($v < 1) { // benannte SOS-Empfänger und das aktuelle Orga-Team in den laufenden Plan übernehmen (Einträge bleiben unberührt)
+    $a = (string)($db->active ?? ''); $y = ($a !== '' && isset($db->years->{$a}) && is_object($db->years->{$a})) ? $db->years->{$a} : null;
+    if ($y) { if (!isset($y->info) || !is_object($y->info)) $y->info = new stdClass;
+      if (!isset($y->info->sosNames)) $y->info->sosNames = SZ_MIG1_SOS;
+      if (isset($y->info->notes) && is_array($y->info->notes)) foreach ($y->info->notes as $i => $n) if (is_string($n) && str_starts_with($n, 'Orga-Team:')) $y->info->notes[$i] = SZ_MIG1_NOTE; } }
+  $db->mig = SZ_MIG; return true; }
 function secret(): string { $s = read_data('geheim'); if (is_string($s) && $s !== '') return $s;
   $free = lock(); try { $s = read_data('geheim'); if (!is_string($s) || $s === '') { $s = bin2hex(random_bytes(32)); write_data('geheim', $s); } } finally { $free(); }
   return $s; }

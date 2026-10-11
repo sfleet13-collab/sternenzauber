@@ -3,10 +3,12 @@
    Aufruf: python3 src/build.py"""
 import os, re, json, base64
 
-VERSION = '11.10.2026 g'
+VERSION = '11.10.2026 h'
 # Startwerte beim allerersten Aufruf. Danach gelten die Zugänge, die die Orga in der App unter «Einrichten» festlegt.
 START_CODES = {'helper': 'STERN2026', 'orga': 'Zimtstern-Bratapfel-58'}
-ORGA_NOTE = 'Orga-Team: Juri, Assi, Nina, Magnus und Susan.'
+ORGA_NOTE = 'Orga-Team: Nina B., Julian R., Astrid und Susan.'
+# Diese Personen sehen und übernehmen SOS-Meldungen, zusätzlich zur Orga und zu den Springer-Teams. Später in der App unter «Einrichten» änderbar.
+SOS_NAMES = ['Nina Blasberg', 'Julian Richter', 'Magnus', 'Melli Schittek', 'Frank Blasberg', 'Betsy Arens', 'Saskia Melis']
 
 here = os.path.dirname(os.path.abspath(__file__)); root = os.path.dirname(here)
 rd = lambda *p: open(os.path.join(root, *p), encoding='utf-8').read()
@@ -19,7 +21,8 @@ snap = json.loads(rd('src', 'seed.json'))
 def start_db(codes):
     year = json.loads(json.dumps(snap)); year['info']['title'] = 'Sternenzauber 2026'
     if ORGA_NOTE not in year['info']['notes']: year['info']['notes'].append(ORGA_NOTE)
-    return {'rev': 0, 'active': '2026', 'years': {'2026': year}, 'helpers': [], 'sos': [], 'codes': codes}
+    year['info']['sosNames'] = list(SOS_NAMES)
+    return {'mig': 1, 'rev': 0, 'active': '2026', 'years': {'2026': year}, 'helpers': [], 'sos': [], 'codes': codes}
 
 def module(code, name, exports, pre=''):
     code = re.sub(r'^import .*$', '', code, flags=re.M); code = re.sub(r'^export ', '', code, flags=re.M)
@@ -94,7 +97,7 @@ def page(js, logo_src, fonts_css, head_extra=''):
 
 # 1) Die App für Netlify: Daten liegen auf dem Server, Schriften im Projekt
 live = page(script(True, True, 'logo-rund.png'), 'logo-white.png', FONTS)
-assert 'const REMOTE = true;' in live and 'STERN2026' not in live and 'Assi' not in live, 'Im öffentlichen Teil dürfen keine Codes und Namen stehen'
+assert 'const REMOTE = true;' in live and 'STERN2026' not in live and 'Assi' not in live and 'Blasberg' not in live, 'Im öffentlichen Teil dürfen keine Codes und Namen stehen'
 wr(live, 'public', 'index.html'); print('public/index.html', len(live) // 1024, 'KB')
 
 # 2) Startdaten für den Server
@@ -107,7 +110,7 @@ H = os.path.join(root, 'hostinger')
 if os.path.isdir(H): shutil.rmtree(H)
 shutil.copytree(os.path.join(root, 'public'), H)
 php = page(script(True, True, 'logo-rund.png', 'php'), 'logo-white.png', FONTS)
-assert "const API = 'php';" in php and 'STERN2026' not in php and 'Assi' not in php
+assert "const API = 'php';" in php and 'STERN2026' not in php and 'Assi' not in php and 'Blasberg' not in php
 wr(php, 'hostinger', 'index.html')
 shutil.copy(os.path.join(root, 'server-php', 'api.php'), os.path.join(H, 'api.php'))
 GUARD = '<?php http_response_code(404); exit; ?>\n'

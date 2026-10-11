@@ -278,5 +278,5 @@ a.btn.primary { color: var(--brand-fg) }
 .made { text-align: center; font-size: 13px; color: var(--muted); margin: 0; padding-top: 6px }
 .made a { color: var(--brand); font-weight: 600; text-underline-offset: 3px }
 .made .heart { color: var(--sos); font-size: 15px }
-.made small { display: block; font-size: 12px; margin-top: 2px }
+.made small { display: block; font-size: 12px }
 .field select { font: inherit }

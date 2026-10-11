@@ -303,7 +303,7 @@ a.btn.primary { color: var(--brand-fg) }
 .made { text-align: center; font-size: 13px; color: var(--muted); margin: 0; padding-top: 6px }
 .made a { color: var(--brand); font-weight: 600; text-underline-offset: 3px }
 .made .heart { color: var(--sos); font-size: 15px }
-.made small { display: block; font-size: 12px; margin-top: 2px }
+.made small { display: block; font-size: 12px }
 .field select { font: inherit }
 </style>
 </head>
@@ -445,8 +445,7 @@ const STANDALONE = true;
 const LOGO = 'logo-rund.png';
 const MAILRE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const ROLE = { helper: 'Helfer', orga: 'Orga' };
-const VERSION = '11.10.2026 g';
-const MADE_URL = 'https://susanfleet.de'; /* Link hinter «Made with ♥ by Susan Fleet» */
+const VERSION = '11.10.2026 h';
 const NET = 'Keine Verbindung. Bitte später noch einmal versuchen.';
 const rid = p => p + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 
@@ -570,7 +569,10 @@ const inGroup = st => S.group === 'all' || grp(st) === S.group;
 const openSos = () => DB.sos.filter(x => x.status !== 'done').length;
 const isSosStation = st => st.sos === undefined ? /springer/i.test(st.name || '') : !!st.sos;
 function sosTeam(m) { const out = new Set(); m.people.forEach((p, k) => { if (p.slots.some(x => isSosStation(x.st))) out.add(k); }); return out; }
-function canHandle(m) { const me = meHelper(); return isOrga() || (!!me && (me.sos || sosTeam(m).has(key(me.name)))); }
+/* namentlich benannte SOS-Empfänger: die Orga pflegt die Liste unter «Einrichten». Gilt, sobald sich die Person mit diesem Namen anmeldet. */
+const sosNames = () => { const l = (Y().info || {}).sosNames; return Array.isArray(l) ? l : []; };
+const sosNamed = h => { const l = sosNames().map(key); return !!h && (l.includes(key(h.name)) || l.includes(key((h.first || '') + ' ' + (h.last || '')))); };
+function canHandle(m) { const me = meHelper(); return isOrga() || (!!me && (me.sos || sosNamed(me) || sosTeam(m).has(key(me.name)))); }
 function setCell(sh, st, data) { const real = Y().shifts.find(s => s.id === sh.id); if (!real) return; real.cells = real.cells || {}; real.cells[st.id] = data; }
 /* Nur die Namen eines Felds ändern. by merkt sich, wer jemand anderen eingetragen hat: diese Person darf den Eintrag auch wieder entfernen. */
 function setPeople(sh, st, people, by) { const real = Y().shifts.find(x => x.id === sh.id); if (!real) return; real.cells = real.cells || {};
@@ -796,7 +798,7 @@ function vHelfer(m) {
   if (!list.length) return h + '<div class="empty"><h2>Niemand gefunden</h2><p class="muted">Unter diesem Namen oder dieser Nummer ist niemand eingetragen.</p></div>';
   return h + '<ul class="list">' + list.map(r => { const k = key(r.name), open = S.openPerson === k, n = r.p ? r.p.slots.length : 0, dbl = !!r.p && r.p.slots.some(s => isDouble(m, s.sh, r.name));
     let o = '<li><button class="item" type="button" data-act="person" data-v="' + esc(k) + '" aria-expanded="' + open + '"><span class="caret" aria-hidden="true">›</span><span class="main"><b>' + esc(r.name) + '</b><small>' + (r.h ? esc([r.h.first + ' ' + r.h.last, r.h.phone || 'keine Handynummer', r.h.email, byName(r.h)].filter(Boolean).join(' · ')) : 'noch keine Handynummer und E-Mail') + '</small></span>'
-      + (r.h && r.h.role ? '<span class="pill role-pill">' + ROLE[r.h.role] + '</span>' : '') + (r.h && r.h.sos ? '<span class="pill open">SOS-Empfänger</span>' : '') + (dbl ? '<span class="pill open">doppelt eingeteilt</span>' : '') + '<span class="pill plain">' + n + (n === 1 ? ' Einsatz' : ' Einsätze') + (r.p ? ' · ' + hours(r.p.mins) : '') + '</span></button>';
+      + (r.h && r.h.role ? '<span class="pill role-pill">' + ROLE[r.h.role] + '</span>' : '') + (r.h && (r.h.sos || sosNamed(r.h)) ? '<span class="pill open">SOS-Empfänger</span>' : '') + (dbl ? '<span class="pill open">doppelt eingeteilt</span>' : '') + '<span class="pill plain">' + n + (n === 1 ? ' Einsatz' : ' Einsätze') + (r.p ? ' · ' + hours(r.p.mins) : '') + '</span></button>';
     if (open) o += '<div class="person-body">' + (n ? '<ul>' + r.p.slots.map(s => { const i = dayInfo(s.sh.date);
         return '<li><span class="when mono">' + i.wd + ' ' + i.dm + ' ' + esc(span(s.sh)) + '</span><span><b>' + esc(s.st.name) + '</b>' + (s.st.place ? ', ' + esc(s.st.place) : '') + (isDouble(m, s.sh, r.name) ? ' <span class="dbl">2× in dieser Schicht</span>' : '') + '</span></li>'; }).join('') + '</ul>' : '<p class="muted">Noch keine Schicht.</p>')
       + '<div class="row">' + (n ? '<button class="btn" data-act="copy-person" data-v="' + esc(k) + '">Einsätze als Text kopieren</button>' : '')
@@ -806,13 +808,14 @@ function vHelfer(m) {
 }
 
 function vSos(m) {
-  const handle = canHandle(m), rec = DB.helpers.filter(h => h.sos).length, team = sosTeam(m).size;
+  const handle = canHandle(m), named = sosNames(), rec = DB.helpers.filter(h => h.sos && !sosNamed(h)).length + named.length, team = sosTeam(m).size;
   let h = '<section class="sosbox"><div class="beacon" aria-hidden="true"><i></i></div><div class="beacon-base" aria-hidden="true"></div>'
     + '<button class="sosbig" type="button" data-act="sos-new"><b>SOS</b><span>Hier drücken, wenn ein Stand etwas braucht</span></button>'
-    + '<p class="muted">Zwei Fingertipps genügen: Stand wählen, Bedarf wählen, senden.</p></section>';
+    + '<p class="muted">Zwei Fingertipps genügen: Stand wählen, Bedarf wählen, senden.</p>'
+    + '<p class="muted">Die Meldung geht an die Springer-Teams, die Orga' + (named.length ? ' und an ' + esc(named.join(', ')) : '') + '.</p></section>';
   const items = DB.sos.filter(x => handle || x.by === myName()).sort((a, b) => (a.status === 'done') - (b.status === 'done') || b.at - a.at);
   h += '<section class="sect"><h2>' + (handle ? 'SOS-Meldungen' : 'Deine Meldungen') + '</h2><p class="muted">'
-    + (isOrga() ? 'Meldungen sehen und übernehmen: die Orga, alle ' + team + ' Personen aus den Springer-Teams und ' + (rec ? rec + ' zusätzlich benannte' : 'zusätzlich benannte') + ' SOS-Empfänger. Welche Teams dazugehören, stellst du unter «Einrichten» beim Stand ein, einzelne Personen im Reiter «Helfer».'
+    + (isOrga() ? 'Meldungen sehen und übernehmen: die Orga, alle ' + team + ' Personen aus den Springer-Teams und ' + (rec ? rec + ' zusätzlich benannte' : 'zusätzlich benannte') + ' SOS-Empfänger. Welche Teams dazugehören, stellst du unter «Einrichten» beim Stand ein, die benannten Personen ebenfalls unter «Einrichten».'
       : handle ? 'Du gehörst zum SOS-Team. Übernimm eine Meldung, damit alle sehen, dass du unterwegs bist.' : 'Hier siehst du, ob schon jemand für dich unterwegs ist.') + '</p>';
   if (!items.length) return h + '<div class="empty"><p class="muted">' + (handle ? 'Im Moment gibt es keine SOS-Meldung.' : 'Du hast noch nichts gemeldet.') + '</p></div></section>';
   return h + '<ul class="list">' + items.map(x => { const st = x.status;
@@ -832,6 +835,10 @@ function vEinrichten(m) {
   const notes = Array.isArray(m.info.notes) ? m.info.notes : [];
   h += '<div class="row" style="margin-top:16px"><h2 style="flex:1">Hinweise</h2><button class="btn" data-act="note-new">Hinweis hinzufügen</button></div>';
   h += notes.length ? '<ul class="list">' + notes.map((n, i) => '<li><div class="item"><span class="main">' + esc(n) + '</span><button class="btn quiet" data-act="note-del" data-v="' + i + '">Entfernen</button></div></li>').join('') + '</ul>' : '<p class="muted">Keine Hinweise hinterlegt.</p>';
+  const sn = sosNames();
+  h += '<div class="row" style="margin-top:16px"><h2 style="flex:1">SOS-Empfänger</h2><button class="btn" data-act="sosname-new">Person hinzufügen</button></div>'
+    + '<p class="muted">Diese Personen sehen und übernehmen SOS-Meldungen, zusätzlich zur Orga und zu den Springer-Teams. Schreib den Namen so, wie die Person sich anmeldet: Vorname und Nachname.</p>';
+  h += sn.length ? '<ul class="list">' + sn.map((n, i) => '<li><div class="item"><span class="main">' + esc(n) + '</span><button class="btn quiet" data-act="sosname-del" data-v="' + i + '">Entfernen</button></div></li>').join('') + '</ul>' : '<p class="muted">Noch niemand benannt.</p>';
   const codeRow = (which, label, sub) => '<li><div class="item"><span class="main"><b>' + label + '</b><small>' + sub + '</small></span><span class="mono">' + esc(DB.codes[which]) + '</span><button class="btn quiet" data-act="code" data-v="' + which + '">Ändern</button></div></li>';
   h += '<div class="row" style="margin-top:16px"><h2 style="flex:1">Zugänge</h2></div><ul class="list">' + codeRow('helper', 'Helfer-Code', 'für alle aus der WhatsApp-Gruppe') + codeRow('orga', 'Orga-Passwort', 'gemeinsam für das Orga-Team')
     + '</ul>';
@@ -919,7 +926,7 @@ function render() {
     else if (S.tab === 'helfer') h = vHelfer(m);
     else if (!m.shifts.length || !m.stations.length) h = '<div class="empty"><h2>Noch kein Plan angelegt</h2><p class="muted">' + (isOrga() ? 'Lege unter «Einrichten» den ersten Stand und die erste Schicht an.' : 'Die Orga richtet den Plan gerade ein. Schau später noch einmal vorbei.') + '</p></div>';
     else h = S.tab === 'offen' ? vOffen(m) : S.tab === 'meine' ? vMeine(m) : vPlan(m); }
-  view.innerHTML = '<div style="display:flex;flex-direction:column;gap:18px">' + h + homeHelp() + '<p class="made">Made with <span class="heart" role="img" aria-label="Liebe">♥</span> by <a href="' + MADE_URL + '" target="_blank" rel="noopener">Susan Fleet</a><small>Version ' + VERSION + '</small></p></div>';
+  view.innerHTML = '<div style="display:flex;flex-direction:column;gap:18px">' + h + homeHelp() + '<p class="made"><small>Version ' + VERSION + '</small></p></div>';
   if (fid) { const el = document.getElementById(fid); if (el) { el.focus(); if (pos != null) try { el.setSelectionRange(pos, pos); } catch (e) {} } }
 }
 function commit(msg) { persist(); render(); if (msg) toast(msg); }
@@ -993,6 +1000,8 @@ function drawDlg() {
       + foot(D.sh ? '<button type="button" class="btn danger left" data-d="del">' + (D.sure ? 'Samt Besetzung löschen?' : 'Schicht löschen') + '</button>' : '');
   } else if (D.type === 'note') {
     h += '<header><h2 id="dlg-title">Hinweis hinzufügen</h2></header>' + field('f-ntext', 'Text', 'required placeholder="z. B. Schlüssel gibt es im Gemeindehaus"', '') + foot();
+  } else if (D.type === 'sosname') {
+    h += '<header><h2 id="dlg-title">SOS-Empfänger hinzufügen</h2><p class="muted">Vorname und Nachname, so wie die Person sich in der App anmeldet.</p></header>' + field('f-sntext', 'Name', 'required autocomplete="off" placeholder="z. B. Max Mustermann"', '') + foot();
   } else if (D.type === 'block') { const t = blockTargets(m), i = dayInfo(D.day), free = t.filter(x => !x.c.off && !x.c.people.length).length, blocked = t.filter(x => x.c.off && x.c.bulk).length;
     h += '<header><p class="eyebrow">' + i.wdl + ', ' + i.dm + (D.kind === 'shift' ? ' · ' + esc(span(D.sh)) : '') + '</p><h2 id="dlg-title">' + (D.kind === 'shift' ? 'Ganze Schicht sperren' : esc(D.st.name) + ' für den Tag sperren') + '</h2>'
       + '<p class="muted">' + (D.kind === 'shift' ? 'Betrifft alle Stände in dieser Schicht.' : 'Betrifft alle Schichten dieses Stands an diesem Tag.') + ' In gesperrte Felder kann sich niemand eintragen, und sie zählen nicht als offen. Felder mit Einträgen bleiben unverändert.</p></header>'
@@ -1120,6 +1129,9 @@ dlg.addEventListener('submit', e => {
     if (D.sh) { Object.assign(y.shifts.find(s => s.id === D.sh.id), data); return done('Schicht gespeichert'); }
     let id = date + '_' + data.start.replace(':', ''), n = 2; const ids = y.shifts.map(s => s.id), base = id; while (ids.includes(id)) id = base + '-' + n++;
     data.id = id; data.cells = {}; y.shifts.push(data); S.day = date; return done('Schicht angelegt'); }
+  if (D.type === 'sosname') { const t = val('f-sntext'); if (!t) return fail('Bitte gib einen Namen ein.');
+    const cur = sosNames(); if (cur.some(n => key(n) === key(t))) return fail('Dieser Name steht schon in der Liste.');
+    y.info.sosNames = cur.concat(t); return done('SOS-Empfänger hinzugefügt'); }
   if (D.type === 'note') { const t = val('f-ntext'); if (!t) return fail('Bitte gib einen Text ein.'); y.info.notes = (Array.isArray(y.info.notes) ? y.info.notes : []).concat(t); return done('Hinweis gespeichert'); }
   if (D.type === 'hreg') { const first = val('f-rfirst'), last = val('f-rlast'), phone = val('f-rphone').replace(/[^\d+]/g, '');
     if (!first || !last) return fail('Bitte Vorname und Nachname eintragen.');
@@ -1168,7 +1180,7 @@ async function makeHelperPdf() { await pdfLib();
   doc.setFont('helvetica', 'bold'); doc.setFontSize(15); doc.setTextColor(43, 47, 74); doc.text((m.info.title || 'Sternenzauber') + ' · Helferliste', 12, 14);
   doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.setTextColor(87, 92, 120);
   doc.text(all.length + ' Personen   ·   ' + withPhone + ' mit Handynummer   ·   ' + pdfStamp() + '   ·   Vertraulich, nur für das Orga-Team', 12, 20.5);
-  const body = all.map(r => { const h = r.h, note = []; if (h && h.role) note.push(ROLE[h.role]); if (h && h.sos) note.push('SOS-Empfänger');
+  const body = all.map(r => { const h = r.h, note = []; if (h && h.role) note.push(ROLE[h.role]); if (h && (h.sos || sosNamed(h))) note.push('SOS-Empfänger');
     if (h && h.by) { const o = DB.helpers.find(x => x.id === h.by); if (o) note.push('eingetragen von ' + o.name); }
     if (!h) note.push('noch nicht angemeldet');
     return [{ content: r.name, styles: { fontStyle: 'bold' } }, h ? h.first || '' : '', h ? h.last || '' : '', h ? h.phone || '' : '', h ? h.email || '' : '', r.p ? String(r.p.slots.length) : '0', r.p ? hours(r.p.mins) : '', h ? (h.again ? 'ja' : 'nein') : '', note.join(', ')]; });
@@ -1239,6 +1251,8 @@ view.addEventListener('click', e => {
   else if (a === 'sh-new') openDlg({ type: 'shift', sh: null });
   else if (a === 'sh-edit') { const sh = m.shifts.find(s => s.id === v); if (sh) openDlg({ type: 'shift', sh }); }
   else if (a === 'note-new') openDlg({ type: 'note' });
+  else if (a === 'sosname-new') openDlg({ type: 'sosname' });
+  else if (a === 'sosname-del') { const cur = sosNames().slice(); cur.splice(Number(v), 1); Y().info.sosNames = cur; commit('SOS-Empfänger entfernt'); }
   else if (a === 'note-del') { Y().info.notes.splice(Number(v), 1); commit('Hinweis entfernt'); }
   else if (a === 'code') openDlg({ type: 'code', which: v });
   else if (a === 'year-new') openDlg({ type: 'year' });

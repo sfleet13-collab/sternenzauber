@@ -2,7 +2,6 @@
 
 Helferplan für die Standbesetzung beim Sternenzauber Witzhelden. Helfer tragen sich mit einem gemeinsamen Code selbst in Schichten ein, die Orga verwaltet Stände, Schichten, Hinweise und Zugänge. Alle sehen denselben Stand.
 
-Made with ♥ by Susan Fleet · https://susanfleet.de
 
 ## So ist das Projekt aufgebaut
 

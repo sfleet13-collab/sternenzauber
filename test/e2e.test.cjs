@@ -100,6 +100,14 @@ let fails = 0, n = 0; const ok = (c, l) => { n++; console.log((c ? 'ok      ' : 
   fs.writeFileSync(path.join(OUT, all.name), Buffer.from(all.data)); ok(/Seiten/.test(all.text), 'PDF für alle Bereiche: ' + all.text.split('\n').slice(0, 3).join(' / '));
   await A.click('[data-d=cancel]');
 
+  // SOS: alle dürfen melden, benannte Personen und Orga sehen und übernehmen
+  const C = await phone(); await C.fill('#g-code', CODE); await C.click('#f-code [type=submit]'); await C.waitForSelector('#g-first'); await reg(C, 'Saskia', 'Melis', '0160 4445556', 'saskia@beispiel.de');
+  await B.click('[data-tab=sos]'); ok((await B.$eval('#view', e => e.innerText)).includes('Nina Blasberg, Julian Richter, Magnus, Melli Schittek, Frank Blasberg, Betsy Arens, Saskia Melis'), 'Helfer sehen, an wen die SOS-Meldung geht');
+  await B.click('[data-act=sos-new]'); await B.click('#dlg [data-d=sos-st]'); await B.click('#dlg [data-d=sos-need]'); await B.click('#dform [type=submit]'); await B.waitForTimeout(600); await B.click('[data-d=cancel]');
+  ok(!(await B.$('[data-act=sos-go]')), 'eine normale Helferin kann melden, aber nicht übernehmen');
+  await C.click('[data-tab=sos]'); await refresh(C); ok(!!(await C.$('[data-act=sos-go]')) && (await C.$eval('#view', e => e.innerText)).includes('von Astrid K.'), 'benannte SOS-Empfängerin sieht die Meldung und kann übernehmen');
+  await C.click('[data-act=sos-go]'); await C.waitForTimeout(600); await A.click('[data-tab=sos]'); await refresh(A);
+  ok((await A.$eval('#view', e => e.innerText)).includes('unterwegs: Saskia M.'), 'Orga sieht, wer unterwegs ist'); await B.click('[data-tab=plan]');
   // Helferliste als PDF (nur Orga)
   await A.click('[data-tab=helfer]'); await A.fill('#q', ''); await A.waitForTimeout(200); await A.click('[data-act=pdf-helfer]'); await A.waitForSelector('a[download]', { timeout: 15000 });
   const hl = await A.evaluate(async () => { const a = document.querySelector('a[download]'), buf = new Uint8Array(await (await fetch(a.href)).arrayBuffer()); return { name: a.download, head: String.fromCharCode(...buf.slice(0, 5)), data: Array.from(buf) }; });
@@ -107,11 +115,12 @@ let fails = 0, n = 0; const ok = (c, l) => { n++; console.log((c ? 'ok      ' : 
   await A.click('[data-d=cancel]'); await A.click('[data-tab=plan]');
   ok(!(await B.$('[data-act=pdf-helfer]')), 'Helfer haben keinen Knopf für die Helferliste');
   // Fusszeile, Einrichten ohne Super-Admin, kein seitliches Verrutschen
-  ok((await A.$eval('.made', e => e.innerText.replace(/\s+/g, ' '))).startsWith('Made with ♥ by Susan Fleet'), 'Fusszeile: ' + await A.$eval('.made', e => e.innerText.replace(/\s+/g, ' ')));
+  const foot = await A.$eval('.made', e => e.innerText.replace(/\s+/g, ' ').trim()); ok(/^Version \d/.test(foot) && !/Made|Susan/.test(foot), 'Fusszeile nur noch mit Version: ' + foot);
   await A.click('[data-tab=einrichten]'); await A.waitForTimeout(200);
   const setup = await A.$eval('#view', e => e.innerText);
   ok(!/Super-Admin/.test(setup) && setup.includes('Neues Jahr anlegen') && setup.includes('Orga-Passwort') && !setup.includes('Vorschau zurücksetzen'), 'Einrichten: kein Super-Admin, Orga legt Jahre an');
-  ok(setup.includes('Orga-Team: Juri, Assi, Nina, Magnus und Susan.'), 'Orga-Team steht in den Hinweisen');
+  ok(setup.includes('Orga-Team: Nina B., Julian R., Astrid und Susan.'), 'Orga-Team steht in den Hinweisen');
+  ok(setup.includes('SOS-Empfänger') && setup.includes('Saskia Melis') && setup.includes('Frank Blasberg'), 'SOS-Empfänger stehen unter «Einrichten»');
   for (const [p, name] of [[A, 'A'], [B, 'B']]) ok(await p.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), name + ': nichts ragt seitlich heraus');
   await A.screenshot({ path: path.join(OUT, 'a-einrichten.png'), fullPage: true });
   await B.click('[data-s="' + s1 + '"][data-t="' + t1 + '"]'); await B.waitForTimeout(300); await B.screenshot({ path: path.join(OUT, 'b-dialog.png') }); await B.click('[data-d=cancel]');

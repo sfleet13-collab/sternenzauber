@@ -27,7 +27,7 @@ ok(bad.status === 401 && Date.now() - t0 >= 550, 'falscher Code: abgelehnt und g
 const l1 = await call('POST', 'login', { code: S0.codes.helper });
 ok(l1.status === 200 && l1.type.includes('json') && l1.cc === 'no-store', 'Anmeldung über die echte Funktion');
 ok(l1.body.db.years['2026'].stations.length === 18 && l1.body.db.years['2026'].shifts.length === 13, 'Startplan mit 18 Ständen und 13 Schichten');
-ok(l1.body.db.years['2026'].info.notes.some(x => x.includes('Juri')), 'Orga-Team steht in den Hinweisen');
+ok(l1.body.db.years['2026'].info.notes.some(x => x.includes('Julian')), 'Orga-Team steht in den Hinweisen');
 const people = [];
 for (let i = 0; i < 8; i++) { const l = await call('POST', 'login', { code: S0.codes.helper }); const r = await call('POST', 'register', { first: 'Helfer' + i, last: 'Test', phone: '0170 44400' + i, email: 'h' + i + '@beispiel.de' }, l.body.token); people.push([r.body.token, r.body.db.helpers.find(h => h.id === r.body.me.id).name]); }
 const y = S0.years['2026'], sh = y.shifts[3].id, st = y.stations[1].id;
