@@ -98,6 +98,12 @@ let fails = 0, n = 0; const ok = (c, l) => { n++; console.log((c ? 'ok      ' : 
   fs.writeFileSync(path.join(OUT, all.name), Buffer.from(all.data)); ok(/Seiten/.test(all.text), 'PDF für alle Bereiche: ' + all.text.split('\n').slice(0, 3).join(' / '));
   await A.click('[data-d=cancel]');
 
+  // Helferliste als PDF (nur Orga)
+  await A.click('[data-tab=helfer]'); await A.fill('#q', ''); await A.waitForTimeout(200); await A.click('[data-act=pdf-helfer]'); await A.waitForSelector('a[download]', { timeout: 15000 });
+  const hl = await A.evaluate(async () => { const a = document.querySelector('a[download]'), buf = new Uint8Array(await (await fetch(a.href)).arrayBuffer()); return { name: a.download, head: String.fromCharCode(...buf.slice(0, 5)), data: Array.from(buf) }; });
+  fs.writeFileSync(path.join(OUT, hl.name), Buffer.from(hl.data)); ok(hl.head === '%PDF-' && hl.name === 'sternenzauber-helferliste.pdf', 'Helferliste als PDF: ' + Math.round(hl.data.length / 1024) + ' KB');
+  await A.click('[data-d=cancel]'); await A.click('[data-tab=plan]');
+  ok(!(await B.$('[data-act=pdf-helfer]')), 'Helfer haben keinen Knopf für die Helferliste');
   // Fusszeile, Einrichten ohne Super-Admin, kein seitliches Verrutschen
   ok((await A.$eval('.made', e => e.innerText.replace(/\s+/g, ' '))).startsWith('Made with ♥ by Susan Fleet'), 'Fusszeile: ' + await A.$eval('.made', e => e.innerText.replace(/\s+/g, ' ')));
   await A.click('[data-tab=einrichten]'); await A.waitForTimeout(200);

@@ -445,7 +445,7 @@ const STANDALONE = true;
 const LOGO = 'logo-rund.png';
 const MAILRE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const ROLE = { helper: 'Helfer', orga: 'Orga' };
-const VERSION = '11.10.2026 e';
+const VERSION = '11.10.2026 f';
 const MADE_URL = 'https://susanfleet.de'; /* Link hinter «Made with ♥ by Susan Fleet» */
 const NET = 'Keine Verbindung. Bitte später noch einmal versuchen.';
 const rid = p => p + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
@@ -781,7 +781,7 @@ function reachBox(m) { const withMail = DB.helpers.filter(h => h.email), again =
   return '<section class="reach"><h2>Alle Helfer erreichen</h2><p class="muted">' + withMail.length + ' mit E-Mail, davon ' + again.length + ' möchten nächstes Jahr wieder angeschrieben werden. Die Sammelmail öffnet dein E-Mail-Programm, alle Adressen stehen unsichtbar im BCC.</p><div class="row">'
     + mailLink(withMail.map(h => h.email), m.info.title || 'Sternenzauber', 'Hallo zusammen,\n\n', 'Sammelmail an alle', 'primary')
     + mailLink(again.map(h => h.email), inv.subject, inv.body, 'Einladung fürs nächste Jahr', '')
-    + '<button class="btn" data-act="copy-mails">E-Mail-Adressen kopieren</button><button class="btn" data-act="copy-phones">Handynummern kopieren</button><button class="btn" data-act="csv">Helferliste als Tabelle</button></div></section>'; }
+    + '<button class="btn" data-act="copy-mails">E-Mail-Adressen kopieren</button><button class="btn" data-act="copy-phones">Handynummern kopieren</button><button class="btn" data-act="csv">Helferliste als Tabelle</button><button class="btn" data-act="pdf-helfer">Helferliste als PDF</button></div></section>'; }
 function vHelfer(m) {
   const rows = new Map();
   DB.helpers.forEach(h => rows.set(key(h.name), { name: h.name, h, p: null }));
@@ -1101,9 +1101,7 @@ dlg.addEventListener('submit', e => {
     Object.keys(was).forEach(n => { if (people.includes(n)) by[n] = was[n]; }); if (Object.keys(by).length) data.by = by;
     setCell(D.sh, D.st, data); return done('Gespeichert'); }
   if (D.type === 'pdf') { const group = $('#f-pgroup').value, day = $('#f-pday').value, f = e.target; lock(f, true);
-    makePdf(group, day).then(r => { const name = 'sternenzauber-plan' + (group === 'all' ? '' : '-' + slug(group)) + (day === 'all' ? '' : '-' + day) + '.pdf';
-      let file = null, share = false; try { file = new File([r.blob], name, { type: 'application/pdf' }); share = !!navigator.canShare && navigator.canShare({ files: [file] }); } catch (x) {}
-      openDlg({ type: 'pdfdone', url: URL.createObjectURL(r.blob), name, file, share, pages: r.pages, label: (group === 'all' ? 'Alle Bereiche' : group) + ' · ' + (day === 'all' ? 'alle Tage' : dayInfo(day).wdl) }); },
+    makePdf(group, day).then(r => showPdf(r, 'sternenzauber-plan' + (group === 'all' ? '' : '-' + slug(group)) + (day === 'all' ? '' : '-' + day) + '.pdf', (group === 'all' ? 'Alle Bereiche' : group) + ' · ' + (day === 'all' ? 'alle Tage' : dayInfo(day).wdl)),
       () => { lock(f, false); fail('Das PDF konnte nicht erstellt werden. Bitte prüfe die Verbindung und versuch es noch einmal.'); }); return; }
   if (D.type === 'station') { const name = val('f-sname'); if (!name) return fail('Bitte gib dem Stand einen Namen.');
     const min = Math.min(20, Math.max(1, parseInt(val('f-smin'), 10) || 1)), max = Math.min(20, Math.max(min, parseInt(val('f-smax'), 10) || min));
@@ -1151,9 +1149,34 @@ dlg.addEventListener('submit', e => {
 
 /* ---------- Plan als PDF ---------- */
 function loadScript(src) { return new Promise((ok, no) => { const el = document.createElement('script'); el.src = src; el.onload = ok; el.onerror = no; document.head.appendChild(el); }); }
+async function pdfLib() { if (!window.jspdf) await loadScript('vendor/jspdf.umd.min.js'); if (!window.jspdf.jsPDF.API.autoTable) await loadScript('vendor/jspdf.plugin.autotable.min.js'); }
+function pdfStamp() { const now = new Date(), pad = n => String(n).padStart(2, '0'); return 'Stand ' + now.getDate() + '.' + (now.getMonth() + 1) + '.' + now.getFullYear() + ', ' + pad(now.getHours()) + ':' + pad(now.getMinutes()) + ' Uhr'; }
+function pdfFoot(doc, left) { const pages = doc.getNumberOfPages();
+  for (let p = 1; p <= pages; p++) { doc.setPage(p); doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(130, 134, 155); doc.text('Seite ' + p + ' von ' + pages, 285, 204, { align: 'right' }); doc.text(left, 12, 204); }
+  return pages; }
+function showPdf(r, name, label) { let file = null, share = false; try { file = new File([r.blob], name, { type: 'application/pdf' }); share = !!navigator.canShare && navigator.canShare({ files: [file] }); } catch (x) {}
+  openDlg({ type: 'pdfdone', url: URL.createObjectURL(r.blob), name, file, share, pages: r.pages, label }); }
+/* Helferliste für die Orga: alle Personen aus Plan und Helferliste mit Kontaktdaten und Einsätzen */
+async function makeHelperPdf() { await pdfLib();
+  const m = model(), doc = new window.jspdf.jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' }), rows = new Map();
+  DB.helpers.forEach(h => rows.set(key(h.name), { name: h.name, h, p: null }));
+  m.people.forEach((p, k) => { if (rows.has(k)) rows.get(k).p = p; else rows.set(k, { name: p.name, h: null, p }); });
+  const all = [...rows.values()].sort((a, b) => a.name.localeCompare(b.name, 'de')), withPhone = all.filter(r => r.h && r.h.phone).length;
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(15); doc.setTextColor(43, 47, 74); doc.text((m.info.title || 'Sternenzauber') + ' · Helferliste', 12, 14);
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.setTextColor(87, 92, 120);
+  doc.text(all.length + ' Personen   ·   ' + withPhone + ' mit Handynummer   ·   ' + pdfStamp() + '   ·   Vertraulich, nur für das Orga-Team', 12, 20.5);
+  const body = all.map(r => { const h = r.h, note = []; if (h && h.role) note.push(ROLE[h.role]); if (h && h.sos) note.push('SOS-Empfänger');
+    if (h && h.by) { const o = DB.helpers.find(x => x.id === h.by); if (o) note.push('eingetragen von ' + o.name); }
+    if (!h) note.push('noch nicht angemeldet');
+    return [{ content: r.name, styles: { fontStyle: 'bold' } }, h ? h.first || '' : '', h ? h.last || '' : '', h ? h.phone || '' : '', h ? h.email || '' : '', r.p ? String(r.p.slots.length) : '0', r.p ? hours(r.p.mins) : '', h ? (h.again ? 'ja' : 'nein') : '', note.join(', ')]; });
+  doc.autoTable({ head: [['Name im Plan', 'Vorname', 'Nachname', 'Handynummer', 'E-Mail', 'Einsätze', 'Stunden', 'Nächstes Jahr', 'Hinweis']], body, startY: 25, margin: { top: 12, left: 12, right: 12, bottom: 12 }, theme: 'grid', rowPageBreak: 'avoid',
+    styles: { font: 'helvetica', fontSize: 8.5, cellPadding: 1.6, lineColor: [203, 208, 224], lineWidth: 0.2, textColor: [27, 30, 51], valign: 'middle', overflow: 'linebreak' },
+    headStyles: { fillColor: [43, 47, 74], textColor: 255, fontStyle: 'bold' }, alternateRowStyles: { fillColor: [245, 246, 250] },
+    columnStyles: { 0: { cellWidth: 34 }, 1: { cellWidth: 26 }, 2: { cellWidth: 30 }, 3: { cellWidth: 32 }, 4: { cellWidth: 58 }, 5: { cellWidth: 17, halign: 'right' }, 6: { cellWidth: 19, halign: 'right' }, 7: { cellWidth: 21 } } });
+  return { blob: doc.output('blob'), pages: pdfFoot(doc, (m.info.title || 'Sternenzauber') + ' · Helferliste · vertraulich') };
+}
 async function makePdf(group, day) {
-  if (!window.jspdf) await loadScript('vendor/jspdf.umd.min.js');
-  if (!window.jspdf.jsPDF.API.autoTable) await loadScript('vendor/jspdf.plugin.autotable.min.js');
+  await pdfLib();
   const m = model(), doc = new window.jspdf.jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' }), pad = n => String(n).padStart(2, '0'), now = new Date();
   const days = day === 'all' ? m.days : m.days.filter(d => d === day), sts = m.stations.filter(st => group === 'all' || grp(st) === group);
   const title = (m.info.title || 'Sternenzauber') + ' · Standbesetzung', stamp = 'Stand ' + now.getDate() + '.' + (now.getMonth() + 1) + '.' + now.getFullYear() + ', ' + pad(now.getHours()) + ':' + pad(now.getMinutes()) + ' Uhr';
@@ -1172,9 +1195,7 @@ async function makePdf(group, day) {
     doc.autoTable({ head: [['Stand'].concat(shifts.map(x => span(x) + ' Uhr'))], body, startY: 25, margin: { top: 12, left: 12, right: 12, bottom: 12 }, theme: 'grid', rowPageBreak: 'avoid',
       styles: { font: 'helvetica', fontSize: 9, cellPadding: 1.8, lineColor: [203, 208, 224], lineWidth: 0.2, textColor: [27, 30, 51], valign: 'top', overflow: 'linebreak' },
       headStyles: { fillColor: [43, 47, 74], textColor: 255, fontStyle: 'bold' }, columnStyles: { 0: { cellWidth: 50 } } }); });
-  const pages = doc.getNumberOfPages();
-  for (let p = 1; p <= pages; p++) { doc.setPage(p); doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(130, 134, 155); doc.text('Seite ' + p + ' von ' + pages, 285, 204, { align: 'right' }); doc.text(m.info.title || 'Sternenzauber', 12, 204); }
-  return { blob: doc.output('blob'), pages };
+  return { blob: doc.output('blob'), pages: pdfFoot(doc, m.info.title || 'Sternenzauber') };
 }
 
 /* ---------- Texte zum Kopieren ---------- */
@@ -1221,6 +1242,10 @@ view.addEventListener('click', e => {
   else if (a === 'year-show') { S.year = v; S.day = null; S.prog = null; S.sure = false; render(); toast('Jahr ' + v + ' wird angezeigt'); }
   else if (a === 'year-live') { if (S.sure !== 'live' + v) { S.sure = 'live' + v; return render(); } S.sure = false; DB.active = v; S.year = null; S.day = null; S.prog = null; commit('Alle Helfer sehen jetzt ' + v); }
   else if (a === 'pdf') openDlg({ type: 'pdf', group: S.group, day: 'all' });
+  else if (a === 'pdf-helfer') { if (!isOrga()) return;
+    if (!STANDALONE) return openDlg({ type: 'text', title: 'Helferliste als PDF', hint: 'In dieser Vorschau lässt sich keine Datei speichern. In der App erstellt der Knopf hier das PDF.', text: textHelpers(m) });
+    b.disabled = true; toast('PDF wird erstellt …');
+    makeHelperPdf().then(r => showPdf(r, 'sternenzauber-helferliste.pdf', 'Helferliste'), () => { b.disabled = false; toast('Das PDF konnte nicht erstellt werden.'); }); }
   else if (a === 'reset') { if (S.sure !== 'reset') { S.sure = 'reset'; return render(); } S.sure = false; if (!REMOTE) { try { localStorage.removeItem('sz.vorschau.server'); } catch (x) {} signOut(); toast('Vorschau zurückgesetzt'); } }
   else if (a === 'stars') starShow(3);
   else if (a === 'niks') nikolaus(3);
