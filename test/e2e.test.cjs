@@ -119,7 +119,14 @@ let fails = 0, n = 0; const ok = (c, l) => { n++; console.log((c ? 'ok      ' : 
   await A.click('[data-tab=einrichten]'); await A.waitForTimeout(200);
   const setup = await A.$eval('#view', e => e.innerText);
   ok(!/Super-Admin/.test(setup) && setup.includes('Neues Jahr anlegen') && setup.includes('Orga-Passwort') && !setup.includes('Vorschau zurücksetzen'), 'Einrichten: kein Super-Admin, Orga legt Jahre an');
-  ok(setup.includes('Orga-Team: Nina B., Julian R., Astrid und Susan.'), 'Orga-Team steht in den Hinweisen');
+  ok((await B.$eval('#view', e => e.innerText)).includes('Orga-Team: Nina B., Julian R., Astrid und Susan.'), 'Orga-Team steht bei den Helfern in den Hinweisen');
+  ok(setup.includes('Orga-Team') && (await A.$$('[data-act=organame-del]')).length === 4, 'Orga-Team als eigene Liste unter «Einrichten»');
+  await A.click('[data-act=organame-new]'); await A.fill('#f-ontext', 'Max M.'); await A.click('#dform [type=submit]'); await A.waitForTimeout(800);
+  ok((await A.$$('[data-act=organame-del]')).length === 5, 'Orga kann eine Person ins Orga-Team aufnehmen');
+  await B.reload(); await B.waitForSelector('#view .notes', { timeout: 15000 });
+  ok((await B.$eval('#view', e => e.innerText)).includes('Orga-Team: Nina B., Julian R., Astrid, Susan und Max M.'), 'Helfer sehen das neue Orga-Team in den Hinweisen');
+  await A.click('[data-act=organame-del][data-v="4"]'); await A.waitForTimeout(800);
+  ok((await A.$$('[data-act=organame-del]')).length === 4, 'Orga kann eine Person wieder entfernen');
   ok(setup.includes('SOS-Empfänger') && setup.includes('Saskia Melis') && setup.includes('Frank Blasberg'), 'SOS-Empfänger stehen unter «Einrichten»');
   for (const [p, name] of [[A, 'A'], [B, 'B']]) ok(await p.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), name + ': nichts ragt seitlich heraus');
   await A.screenshot({ path: path.join(OUT, 'a-einrichten.png'), fullPage: true });

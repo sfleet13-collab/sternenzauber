@@ -142,6 +142,15 @@ const inGroup = st => S.group === 'all' || grp(st) === S.group;
 const openSos = () => DB.sos.filter(x => x.status !== 'done').length;
 const isSosStation = st => st.sos === undefined ? /springer/i.test(st.name || '') : !!st.sos;
 function sosTeam(m) { const out = new Set(); m.people.forEach((p, k) => { if (p.slots.some(x => isSosStation(x.st))) out.add(k); }); return out; }
+/* Orga-Team: die Orga pflegt die Namen unter «Einrichten». Daraus entsteht der Hinweis «Orga-Team: …», den alle sehen. */
+const ORGA_PREFIX = 'Orga-Team:';
+const isOrgaNote = n => typeof n === 'string' && n.startsWith(ORGA_PREFIX);
+const orgaNames = () => { const i = Y().info || {}; if (Array.isArray(i.orgaNames)) return i.orgaNames;
+  const n = (Array.isArray(i.notes) ? i.notes : []).find(isOrgaNote); if (!n) return [];
+  return n.slice(ORGA_PREFIX.length).trim().replace(/\.$/, '').split(/,\s*|\s+und\s+/).map(x => x.trim()).filter(Boolean); };
+const listText = l => l.length < 2 ? l.join('') : l.slice(0, -1).join(', ') + ' und ' + l[l.length - 1];
+function setOrgaNames(y, l) { y.info.orgaNames = l; const notes = (Array.isArray(y.info.notes) ? y.info.notes : []).slice(), i = notes.findIndex(isOrgaNote), t = ORGA_PREFIX + ' ' + listText(l) + '.';
+  if (!l.length) { if (i >= 0) notes.splice(i, 1); } else if (i >= 0) notes[i] = t; else notes.push(t); y.info.notes = notes; }
 /* namentlich benannte SOS-Empfänger: die Orga pflegt die Liste unter «Einrichten». Gilt, sobald sich die Person mit diesem Namen anmeldet. */
 const sosNames = () => { const l = (Y().info || {}).sosNames; return Array.isArray(l) ? l : []; };
 /* Passt ein Helfer zu einem Namen der SOS-Liste? Nur ein Vorname passt auf alle mit diesem Vornamen, «Vorname Nachname» auf beide Namen oder auf die Kurzform «Vorname N.». */
@@ -412,7 +421,12 @@ function vEinrichten(m) {
     : '<div class="empty"><p class="muted">Noch keine Schicht angelegt.</p></div>';
   const notes = Array.isArray(m.info.notes) ? m.info.notes : [];
   h += '<div class="row" style="margin-top:16px"><h2 style="flex:1">Hinweise</h2><button class="btn" data-act="note-new">Hinweis hinzufügen</button></div>';
-  h += notes.length ? '<ul class="list">' + notes.map((n, i) => '<li><div class="item"><span class="main">' + esc(n) + '</span><button class="btn quiet" data-act="note-del" data-v="' + i + '">Entfernen</button></div></li>').join('') + '</ul>' : '<p class="muted">Keine Hinweise hinterlegt.</p>';
+  const own = notes.map((n, i) => [n, i]).filter(x => !isOrgaNote(x[0]));
+  h += own.length ? '<ul class="list">' + own.map(([n, i]) => '<li><div class="item"><span class="main">' + esc(n) + '</span><button class="btn quiet" data-act="note-del" data-v="' + i + '">Entfernen</button></div></li>').join('') + '</ul>' : '<p class="muted">Keine Hinweise hinterlegt.</p>';
+  const on = orgaNames();
+  h += '<div class="row" style="margin-top:16px"><h2 style="flex:1">Orga-Team</h2><button class="btn" data-act="organame-new">Person hinzufügen</button></div>'
+    + '<p class="muted">Steht für alle sichtbar in den Hinweisen. Ins Orga-Login kommt man weiterhin mit dem gemeinsamen Orga-Passwort.</p>';
+  h += on.length ? '<ul class="list">' + on.map((n, i) => '<li><div class="item"><span class="main">' + esc(n) + '</span><button class="btn quiet" data-act="organame-del" data-v="' + i + '">Entfernen</button></div></li>').join('') + '</ul>' : '<p class="muted">Noch niemand eingetragen.</p>';
   const sn = sosNames();
   h += '<div class="row" style="margin-top:16px"><h2 style="flex:1">SOS-Empfänger</h2><button class="btn" data-act="sosname-new">Person hinzufügen</button></div>'
     + '<p class="muted">Diese Personen sehen und übernehmen SOS-Meldungen, zusätzlich zur Orga und zu den Springer-Teams. Schreib den Namen so, wie die Person sich anmeldet: Vorname und Nachname.</p>';
@@ -551,6 +565,8 @@ function drawDlg() {
       + foot(D.sh ? '<button type="button" class="btn danger left" data-d="del">' + (D.sure ? 'Samt Besetzung löschen?' : 'Schicht löschen') + '</button>' : '');
   } else if (D.type === 'note') {
     h += '<header><h2 id="dlg-title">Hinweis hinzufügen</h2></header>' + field('f-ntext', 'Text', 'required placeholder="z. B. Schlüssel gibt es im Gemeindehaus"', '') + foot();
+  } else if (D.type === 'organame') {
+    h += '<header><h2 id="dlg-title">Zum Orga-Team hinzufügen</h2><p class="muted">So, wie der Name in den Hinweisen stehen soll.</p></header>' + field('f-ontext', 'Name', 'required autocomplete="off" placeholder="z. B. Max M."', '') + foot();
   } else if (D.type === 'sosname') {
     h += '<header><h2 id="dlg-title">SOS-Empfänger hinzufügen</h2><p class="muted">Vorname und Nachname, so wie die Person sich in der App anmeldet.</p></header>' + field('f-sntext', 'Name', 'required autocomplete="off" placeholder="z. B. Max Mustermann"', '') + foot();
   } else if (D.type === 'block') { const t = blockTargets(m), i = dayInfo(D.day), free = t.filter(x => !x.c.off && !x.c.people.length).length, blocked = t.filter(x => x.c.off && x.c.bulk).length;
@@ -680,6 +696,9 @@ dlg.addEventListener('submit', e => {
     if (D.sh) { Object.assign(y.shifts.find(s => s.id === D.sh.id), data); return done('Schicht gespeichert'); }
     let id = date + '_' + data.start.replace(':', ''), n = 2; const ids = y.shifts.map(s => s.id), base = id; while (ids.includes(id)) id = base + '-' + n++;
     data.id = id; data.cells = {}; y.shifts.push(data); S.day = date; return done('Schicht angelegt'); }
+  if (D.type === 'organame') { const t = val('f-ontext'); if (!t) return fail('Bitte gib einen Namen ein.');
+    const cur = orgaNames(); if (cur.some(n => key(n) === key(t))) return fail('Dieser Name steht schon in der Liste.');
+    setOrgaNames(y, cur.concat(t)); return done(t + ' gehört jetzt zum Orga-Team'); }
   if (D.type === 'sosname') { const t = val('f-sntext'); if (!t) return fail('Bitte gib einen Namen ein.');
     const cur = sosNames(); if (cur.some(n => key(n) === key(t))) return fail('Dieser Name steht schon in der Liste.');
     y.info.sosNames = cur.concat(t); return done('SOS-Empfänger hinzugefügt'); }
@@ -802,6 +821,8 @@ view.addEventListener('click', e => {
   else if (a === 'sh-new') openDlg({ type: 'shift', sh: null });
   else if (a === 'sh-edit') { const sh = m.shifts.find(s => s.id === v); if (sh) openDlg({ type: 'shift', sh }); }
   else if (a === 'note-new') openDlg({ type: 'note' });
+  else if (a === 'organame-new') openDlg({ type: 'organame' });
+  else if (a === 'organame-del') { const cur = orgaNames().slice(), gone = cur.splice(Number(v), 1)[0]; setOrgaNames(Y(), cur); commit((gone || 'Person') + ' aus dem Orga-Team entfernt'); }
   else if (a === 'sosname-new') openDlg({ type: 'sosname' });
   else if (a === 'sosname-del') { const cur = sosNames().slice(); cur.splice(Number(v), 1); Y().info.sosNames = cur; commit('SOS-Empfänger entfernt'); }
   else if (a === 'note-del') { Y().info.notes.splice(Number(v), 1); commit('Hinweis entfernt'); }

@@ -3,7 +3,7 @@
    Aufruf: python3 src/build.py"""
 import os, re, json, base64
 
-VERSION = '11.10.2026 h'
+VERSION = '12.10.2026 i'
 # Startwerte beim allerersten Aufruf. Danach gelten die Zugänge, die die Orga in der App unter «Einrichten» festlegt.
 START_CODES = {'helper': 'STERN2026', 'orga': 'Zimtstern-Bratapfel-58'}
 ORGA_NOTE = 'Orga-Team: Nina B., Julian R., Astrid und Susan.'
