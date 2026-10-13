@@ -4,3 +4,5 @@ node_modules/
 test/tmp/
 hostinger/daten/*
 !hostinger/daten/.htaccess
+private/
+hostinger/kontakte.php

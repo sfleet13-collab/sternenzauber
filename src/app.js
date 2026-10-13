@@ -151,6 +151,8 @@ const orgaNames = () => { const i = Y().info || {}; if (Array.isArray(i.orgaName
 const listText = l => l.length < 2 ? l.join('') : l.slice(0, -1).join(', ') + ' und ' + l[l.length - 1];
 function setOrgaNames(y, l) { y.info.orgaNames = l; const notes = (Array.isArray(y.info.notes) ? y.info.notes : []).slice(), i = notes.findIndex(isOrgaNote), t = ORGA_PREFIX + ' ' + listText(l) + '.';
   if (!l.length) { if (i >= 0) notes.splice(i, 1); } else if (i >= 0) notes[i] = t; else notes.push(t); y.info.notes = notes; }
+/* Namen, die sich ohne Handynummer und E-Mail anmelden dürfen. Die Orga pflegt sie unter «Einrichten». */
+const ncNames = () => { const l = (Y().info || {}).noContact; return Array.isArray(l) ? l : []; };
 /* namentlich benannte SOS-Empfänger: die Orga pflegt die Liste unter «Einrichten». Gilt, sobald sich die Person mit diesem Namen anmeldet. */
 const sosNames = () => { const l = (Y().info || {}).sosNames; return Array.isArray(l) ? l : []; };
 /* Passt ein Helfer zu einem Namen der SOS-Liste? Nur ein Vorname passt auf alle mit diesem Vornamen, «Vorname Nachname» auf beide Namen oder auf die Kurzform «Vorname N.». */
@@ -201,13 +203,15 @@ function vGate() {
   const P = S.pending || {};
   const hint = REMOTE ? '' : '<p class="banner info">Vorschau zum Ausprobieren. Alles bleibt nur in diesem Browser gespeichert. Codes zum Testen: Helfer <b>' + esc(SEED.codes.helper) + '</b>, Orga <b>' + esc(SEED.codes.orga) + '</b>.</p>';
   let h;
-  if (S.gate === 'reg') h = '<h2>Wer bist du?</h2><p class="muted">' + (S.pendingRole ? 'Auch im Orga-Team bist du Helfer. Trag dich einmal ein, dann kannst du selbst Schichten übernehmen und stehst in der Helferliste. Deine Orga-Rechte bleiben.' : 'Einmal ausfüllen, danach merkt sich dein Handy die Anmeldung. Deine Handynummer und E-Mail sieht nur die Orga.') + '</p><form id="f-reg" novalidate>'
+  if (S.gate === 'reg') h = '<h2>Wer bist du?</h2><p class="muted">' + (S.pendingRole ? 'Auch im Orga-Team bist du Helfer. Trag dich einmal ein, dann kannst du selbst Schichten übernehmen und stehst in der Helferliste. Deine Orga-Rechte bleiben.' : 'Stehst du schon auf unserer Helferliste, erkennen wir dich an Vorname und Handynummer. Danach merkt sich dein Handy die Anmeldung.') + '</p><form id="f-reg" novalidate>'
     + '<div class="two"><div class="field"><label for="g-first">Vorname</label><input id="g-first" autocomplete="given-name" value="' + esc(P.first || '') + '"></div><div class="field"><label for="g-last">Nachname</label><input id="g-last" autocomplete="family-name" value="' + esc(P.last || '') + '"></div></div>'
     + '<div class="field"><label for="g-phone">Handynummer</label><input id="g-phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="z. B. 0171 2345678" value="' + esc(P.phone || '') + '"></div>'
+    + '<label class="check"><input type="checkbox" id="g-ok"' + (P.ok ? ' checked' : '') + '><span>Ich bin einverstanden, dass mein Name im Helferplan steht und die Orga meine Kontaktdaten für den Sternenzauber nutzt.</span></label>'
+    + '<p class="hint warn" id="g-err" hidden></p><div class="row"><button type="button" class="btn" data-act="gate" data-v="start">Zurück</button><button type="submit" class="btn primary">Weiter</button></div></form>';
+  else if (S.gate === 'reg2') h = '<h2>Neu dabei, ' + esc(P.first || '') + '?</h2><p class="muted">Deine Handynummer kennen wir noch nicht. Gib noch deine E-Mail an, dann bist du dabei. Handynummer und E-Mail sieht nur die Orga.</p><form id="f-reg2" novalidate>'
     + '<div class="field"><label for="g-mail">E-Mail</label><input id="g-mail" type="email" inputmode="email" autocomplete="email" placeholder="name@beispiel.de" value="' + esc(P.email || '') + '"></div>'
-    + '<label class="check"><input type="checkbox" id="g-ok"><span>Ich bin einverstanden, dass mein Name im Helferplan steht und die Orga meine Handynummer und E-Mail für den Sternenzauber nutzt.</span></label>'
     + '<label class="check"><input type="checkbox" id="g-again"><span>Ihr dürft mich nächstes Jahr wieder anschreiben, wenn der Helferplan öffnet. (freiwillig)</span></label>'
-    + '<p class="hint warn" id="g-err" hidden></p><div class="row"><button type="button" class="btn" data-act="gate" data-v="start">Zurück</button><button type="submit" class="btn primary">Zum Plan</button></div></form>';
+    + '<p class="hint warn" id="g-err" hidden></p><div class="row"><button type="button" class="btn" data-act="gate" data-v="reg">Zurück</button><button type="submit" class="btn primary">Zum Plan</button></div></form>';
   else if (S.gate === 'orga') h = '<h2>Orga-Login</h2><p class="muted">Für das Orga-Team.</p><form id="f-orga" novalidate>'
     + '<div class="field"><label for="g-pw">Passwort</label><input id="g-pw" type="password" autocomplete="current-password" autocapitalize="off" autocorrect="off" spellcheck="false"></div>'
     + '<label class="check"><input type="checkbox" id="g-show"><span>Passwort anzeigen</span></label><p class="hint">Gross- und Kleinschreibung, Bindestriche und Zahlen gehören dazu.</p>'
@@ -218,9 +222,10 @@ function vGate() {
     + (STANDALONE && /iphone|ipad|ipod/i.test(navigator.userAgent) && !(window.navigator.standalone === true || window.matchMedia('(display-mode: standalone)').matches)
       ? '<p class="hint">Tipp fürs iPhone: Leg die App zuerst auf den Home-Bildschirm (Anleitung unten) und melde dich dann dort an. So meldest du dich nur einmal an.</p>' : '');
   if (S.gate === 'claim') { const m = model();
-    h = '<h2>Stehst du schon im Plan?</h2><p class="muted">Wir haben Einträge gefunden, die zu dir passen könnten. Wählst du einen aus, gehören diese Schichten ab jetzt zu deiner Anmeldung.</p><div class="claims">'
+    h = (P.nc ? '<h2>Ohne Handynummer</h2><p class="muted">Ohne Handynummer geht die Anmeldung nur, wenn die Orga das für dich freigegeben hat. Bist du eine dieser Personen?</p><div class="claims">'
+      : '<h2>Stehst du schon im Plan?</h2><p class="muted">Wir haben Einträge gefunden, die zu dir passen könnten. Wählst du einen aus, gehören diese Schichten ab jetzt zu deiner Anmeldung.</p><div class="claims">')
       + P.cands.map(n => { const c = m.people.get(key(n)), k = c ? c.slots.length : 0; return '<button class="btn" data-act="claim" data-v="' + esc(n) + '">Ja, ich bin «' + esc(n) + '» <span class="muted">· ' + k + (k === 1 ? ' Schicht' : ' Schichten') + '</span></button>'; }).join('')
-      + '<button class="btn quiet" data-act="claim" data-v="">Nein, ich bin neu</button></div>'; }
+      + (P.nc ? '<button class="btn quiet" data-act="gate" data-v="reg">Nein, zurück</button></div>' : '<button class="btn quiet" data-act="claim" data-v="">Nein, ich bin neu</button></div>'); }
   const alt = S.gate === 'start' ? '<div class="gatealt"><span>Du gehörst zum Orga-Team?</span><button class="btn" data-act="gate" data-v="orga">Orga-Login</button></div>' : '';
   return '<section class="gate"><div class="gatecard">' + (S.gate === 'start' ? '<img class="gatelogo" src="' + LOGO + '" alt="Sternenzauber Witzhelden" width="220" height="220">' : '') + h + '</div>' + alt + hint + '</section>';
 }
@@ -228,7 +233,7 @@ const gval = id => { const e = document.getElementById(id); return e ? e.value.t
 function gerr(msg) { const e = $('#g-err'); if (e) { e.textContent = msg; e.hidden = false; } }
 function enter(msg) { S.tab = 'plan'; S.gate = 'start'; S.prog = null; render(); toast(msg); window.scrollTo(0, 0); }
 function signIn(r, msg) { take(r); setMe({ role: r.me.role, id: r.me.id, token: r.token }); S.tok = null; S.pendingRole = null; S.pending = null; cache(); enter(r.me.role === 'orga' ? msg + '. Du bist als Orga angemeldet.' : msg); }
-const regErr = e => e.code === 'phone' ? 'Diese Handynummer ist schon für eine andere Person hinterlegt. Bitte melde dich bei der Orga.' : e.status ? 'Das hat nicht geklappt. Bitte prüfe deine Angaben.' : NET;
+const regErr = e => e.code === 'taken' ? 'Dieser Name ist schon mit einer Handynummer angemeldet. Bitte melde dich bei der Orga.' : e.code === 'phone' ? 'Diese Handynummer ist schon für eine andere Person hinterlegt. Bitte melde dich bei der Orga.' : e.status ? 'Das hat nicht geklappt. Bitte prüfe deine Angaben.' : NET;
 function dnFor(first, last) { const short = first + ' ' + last.charAt(0).toUpperCase() + '.', taken = new Set(DB.helpers.map(h => key(h.name)));
   model().people.forEach((v, k) => taken.add(k)); return taken.has(key(short)) ? first + ' ' + last : short; }
 function candidates(first, last) { const m = model(), reg = new Set(DB.helpers.filter(h => !h.by).map(h => key(h.name))), f = key(first), li = key(last).charAt(0), out = [];
@@ -238,7 +243,7 @@ function candidates(first, last) { const m = model(), reg = new Set(DB.helpers.f
   return out; }
 function finishReg(claim) { const P = S.pending; if (!P) return;
   api('register', { first: P.first, last: P.last, phone: P.phone, email: P.email, again: P.again, claim: claim || '' })
-    .then(r => signIn(r, 'Willkommen, ' + P.first), e => { if (netFail(e)) return; S.gate = 'reg'; render(); gerr(regErr(e)); }); }
+    .then(r => signIn(r, r.back ? 'Willkommen zurück, ' + P.first : 'Willkommen, ' + P.first), e => { if (netFail(e)) return; S.gate = P.nc || !P.email ? 'reg' : 'reg2'; render(); gerr(regErr(e)); }); }
 view.addEventListener('submit', e => {
   e.preventDefault(); const f = e.target, id = f.id;
   if (id === 'f-code') { const code = gval('g-code'); if (!code) return gerr('Bitte gib den Helfer-Code ein.'); lock(f, true);
@@ -249,15 +254,21 @@ view.addEventListener('submit', e => {
       err => { lock(f, false); gerr(err.code === 'pw' ? 'Das Passwort stimmt nicht.' : NET); }); }
   else if (id === 'f-reg') { const first = gval('g-first'), last = gval('g-last'), phone = gval('g-phone').replace(/[^\d+]/g, '');
     if (!first || !last) return gerr('Bitte Vorname und Nachname eintragen.');
-    const email = gval('g-mail'), again = $('#g-again').checked;
-    if (phone.replace(/\D/g, '').length < 6) return gerr('Bitte eine gültige Handynummer eintragen.');
-    if (!MAILRE.test(email)) return gerr('Bitte eine gültige E-Mail-Adresse eintragen.');
     if (!$('#g-ok').checked) return gerr('Bitte bestätige das Einverständnis.');
-    S.pending = { first, last, phone, email, again }; lock(f, true);
-    api('register', Object.assign({ check: true }, S.pending)).then(r => {
-      if (r.need) { const cands = candidates(first, last); if (cands.length) { S.pending.cands = cands; S.gate = 'claim'; return render(); } return finishReg(''); }
+    const P0 = S.pending || {};
+    if (!phone) { const nc = ncNames(); if (!nc.length) return gerr('Bitte deine Handynummer eintragen.');
+      S.pending = { first, last, phone: '', email: '', again: false, ok: true, nc: true, cands: nc }; S.gate = 'claim'; return render(); }
+    if (phone.replace(/\D/g, '').length < 6) return gerr('Bitte eine gültige Handynummer eintragen.');
+    S.pending = { first, last, phone, email: P0.email || '', again: false, ok: true }; lock(f, true);
+    api('register', { check: true, first, last, phone, email: '' }).then(r => {
+      if (r.need) { S.gate = 'reg2'; render(); const x = $('#g-mail'); if (x) x.focus(); return; }
       signIn(r, r.back ? 'Willkommen zurück, ' + first : 'Willkommen, ' + first); },
       err => { if (netFail(err)) return; lock(f, false); gerr(regErr(err)); }); }
+  else if (id === 'f-reg2') { const P = S.pending; if (!P) { S.gate = 'reg'; return render(); }
+    const email = gval('g-mail'); if (!MAILRE.test(email)) return gerr('Bitte eine gültige E-Mail-Adresse eintragen.');
+    P.email = email; P.again = $('#g-again').checked;
+    const cands = candidates(P.first, P.last); if (cands.length) { P.cands = cands; S.gate = 'claim'; return render(); }
+    lock(f, true); finishReg(''); }
 });
 
 /* ---------- Ansichten ---------- */
@@ -427,6 +438,10 @@ function vEinrichten(m) {
   h += '<div class="row" style="margin-top:16px"><h2 style="flex:1">Orga-Team</h2><button class="btn" data-act="organame-new">Person hinzufügen</button></div>'
     + '<p class="muted">Steht für alle sichtbar in den Hinweisen. Ins Orga-Login kommt man weiterhin mit dem gemeinsamen Orga-Passwort.</p>';
   h += on.length ? '<ul class="list">' + on.map((n, i) => '<li><div class="item"><span class="main">' + esc(n) + '</span><button class="btn quiet" data-act="organame-del" data-v="' + i + '">Entfernen</button></div></li>').join('') + '</ul>' : '<p class="muted">Noch niemand eingetragen.</p>';
+  const nc = ncNames();
+  h += '<div class="row" style="margin-top:16px"><h2 style="flex:1">Ohne Kontaktdaten</h2><button class="btn" data-act="ncname-new">Person hinzufügen</button></div>'
+    + '<p class="muted">Diese Personen melden sich ohne Handynummer und E-Mail an. Sie tragen sich selbst ein und können auch von anderen eingeteilt werden. Schreib den Namen so, wie er im Plan steht.</p>';
+  h += nc.length ? '<ul class="list">' + nc.map((n, i) => '<li><div class="item"><span class="main">' + esc(n) + '</span><button class="btn quiet" data-act="ncname-del" data-v="' + i + '">Entfernen</button></div></li>').join('') + '</ul>' : '<p class="muted">Niemand eingetragen.</p>';
   const sn = sosNames();
   h += '<div class="row" style="margin-top:16px"><h2 style="flex:1">SOS-Empfänger</h2><button class="btn" data-act="sosname-new">Person hinzufügen</button></div>'
     + '<p class="muted">Diese Personen sehen und übernehmen SOS-Meldungen, zusätzlich zur Orga und zu den Springer-Teams. Schreib den Namen so, wie die Person sich anmeldet: Vorname und Nachname.</p>';
@@ -565,6 +580,8 @@ function drawDlg() {
       + foot(D.sh ? '<button type="button" class="btn danger left" data-d="del">' + (D.sure ? 'Samt Besetzung löschen?' : 'Schicht löschen') + '</button>' : '');
   } else if (D.type === 'note') {
     h += '<header><h2 id="dlg-title">Hinweis hinzufügen</h2></header>' + field('f-ntext', 'Text', 'required placeholder="z. B. Schlüssel gibt es im Gemeindehaus"', '') + foot();
+  } else if (D.type === 'ncname') {
+    h += '<header><h2 id="dlg-title">Ohne Kontaktdaten anmelden lassen</h2><p class="muted">Name so, wie er im Plan steht.</p></header>' + field('f-nctext', 'Name im Plan', 'required autocomplete="off" placeholder="z. B. Dani"', '') + foot();
   } else if (D.type === 'organame') {
     h += '<header><h2 id="dlg-title">Zum Orga-Team hinzufügen</h2><p class="muted">So, wie der Name in den Hinweisen stehen soll.</p></header>' + field('f-ontext', 'Name', 'required autocomplete="off" placeholder="z. B. Max M."', '') + foot();
   } else if (D.type === 'sosname') {
@@ -696,6 +713,9 @@ dlg.addEventListener('submit', e => {
     if (D.sh) { Object.assign(y.shifts.find(s => s.id === D.sh.id), data); return done('Schicht gespeichert'); }
     let id = date + '_' + data.start.replace(':', ''), n = 2; const ids = y.shifts.map(s => s.id), base = id; while (ids.includes(id)) id = base + '-' + n++;
     data.id = id; data.cells = {}; y.shifts.push(data); S.day = date; return done('Schicht angelegt'); }
+  if (D.type === 'ncname') { const t = val('f-nctext'); if (!t) return fail('Bitte gib einen Namen ein.');
+    const cur = ncNames(); if (cur.some(n => key(n) === key(t))) return fail('Dieser Name steht schon in der Liste.');
+    y.info.noContact = cur.concat(t); return done(t + ' kann sich ohne Kontaktdaten anmelden'); }
   if (D.type === 'organame') { const t = val('f-ontext'); if (!t) return fail('Bitte gib einen Namen ein.');
     const cur = orgaNames(); if (cur.some(n => key(n) === key(t))) return fail('Dieser Name steht schon in der Liste.');
     setOrgaNames(y, cur.concat(t)); return done(t + ' gehört jetzt zum Orga-Team'); }
@@ -821,6 +841,8 @@ view.addEventListener('click', e => {
   else if (a === 'sh-new') openDlg({ type: 'shift', sh: null });
   else if (a === 'sh-edit') { const sh = m.shifts.find(s => s.id === v); if (sh) openDlg({ type: 'shift', sh }); }
   else if (a === 'note-new') openDlg({ type: 'note' });
+  else if (a === 'ncname-new') openDlg({ type: 'ncname' });
+  else if (a === 'ncname-del') { const cur = ncNames().slice(); cur.splice(Number(v), 1); Y().info.noContact = cur; commit('Aus der Liste «Ohne Kontaktdaten» entfernt'); }
   else if (a === 'organame-new') openDlg({ type: 'organame' });
   else if (a === 'organame-del') { const cur = orgaNames().slice(), gone = cur.splice(Number(v), 1)[0]; setOrgaNames(Y(), cur); commit((gone || 'Person') + ' aus dem Orga-Team entfernt'); }
   else if (a === 'sosname-new') openDlg({ type: 'sosname' });

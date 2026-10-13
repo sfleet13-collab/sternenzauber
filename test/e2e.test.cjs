@@ -7,7 +7,8 @@ let fails = 0, n = 0; const ok = (c, l) => { n++; console.log((c ? 'ok      ' : 
 (async () => {
   const b = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium' }).catch(() => chromium.launch()), errs = [];
   const phone = async () => { const ctx = await b.newContext({ viewport: { width: 390, height: 800 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 }); const p = await ctx.newPage(); p.on('pageerror', e => errs.push(e.message)); p.on('console', m => { if (m.type() === 'error' && !/favicon|401/.test(m.text())) errs.push('console: ' + m.text()); }); await p.goto(URL0); await p.waitForTimeout(300); return p; };
-  const reg = async (p, first, last, tel, mail) => { await p.fill('#g-first', first); await p.fill('#g-last', last); await p.fill('#g-phone', tel); await p.fill('#g-mail', mail); await p.check('#g-ok'); await p.click('#f-reg [type=submit]'); await p.waitForSelector('#userbar:not([hidden])', { timeout: 8000 }); };
+  const reg = async (p, first, last, tel, mail) => { await p.fill('#g-first', first); await p.fill('#g-last', last); await p.fill('#g-phone', tel); await p.check('#g-ok'); await p.click('#f-reg [type=submit]');
+    await p.waitForSelector('#g-mail', { timeout: 8000 }); await p.fill('#g-mail', mail); await p.click('#f-reg2 [type=submit]'); await p.waitForSelector('#userbar:not([hidden])', { timeout: 8000 }); };
   const bar = p => p.evaluate(() => document.querySelector('#userbar').innerText.split('\n')[0]);
   const refresh = async p => { await p.click('[data-h=refresh]'); await p.waitForTimeout(700); };
   const cellText = (p, s, t) => p.evaluate(([s, t]) => { const e = document.querySelector('[data-s="' + s + '"][data-t="' + t + '"]'); return e ? e.innerText : null; }, [s, t]);
@@ -102,12 +103,22 @@ let fails = 0, n = 0; const ok = (c, l) => { n++; console.log((c ? 'ok      ' : 
 
   // SOS: alle dürfen melden, benannte Personen und Orga sehen und übernehmen
   const C = await phone(); await C.fill('#g-code', CODE); await C.click('#f-code [type=submit]'); await C.waitForSelector('#g-first'); await reg(C, 'Saskia', 'Melis', '0160 4445556', 'saskia@beispiel.de');
-  await B.click('[data-tab=sos]'); ok((await B.$eval('#view', e => e.innerText)).includes('Nina Blasberg, Julian Richter, Magnus, Melli Schittek, Frank Blasberg, Betsy Arens, Saskia Melis'), 'Helfer sehen, an wen die SOS-Meldung geht');
+  await B.click('[data-tab=sos]'); ok((await B.$eval('#view', e => e.innerText)).includes('Nina Blasberg, Julian Richter, Magnus, Melli Schitteck, Frank Blasberg, Betsy Arens, Saskia Melis'), 'Helfer sehen, an wen die SOS-Meldung geht');
   await B.click('[data-act=sos-new]'); await B.click('#dlg [data-d=sos-st]'); await B.click('#dlg [data-d=sos-need]'); await B.click('#dform [type=submit]'); await B.waitForTimeout(600); await B.click('[data-d=cancel]');
   ok(!(await B.$('[data-act=sos-go]')), 'eine normale Helferin kann melden, aber nicht übernehmen');
   await C.click('[data-tab=sos]'); await refresh(C); ok(!!(await C.$('[data-act=sos-go]')) && (await C.$eval('#view', e => e.innerText)).includes('von Astrid K.'), 'benannte SOS-Empfängerin sieht die Meldung und kann übernehmen');
   await C.click('[data-act=sos-go]'); await C.waitForTimeout(600); await A.click('[data-tab=sos]'); await refresh(A);
   ok((await A.$eval('#view', e => e.innerText)).includes('unterwegs: Saskia M.'), 'Orga sieht, wer unterwegs ist'); await B.click('[data-tab=plan]');
+  // Wer auf der eingelesenen Liste steht, ist mit Vorname und Handynummer sofort drin (ohne E-Mail)
+  const L = await phone(); await L.fill('#g-code', CODE); await L.click('#f-code [type=submit]'); await L.waitForSelector('#g-first');
+  await L.fill('#g-first', 'Lisa'); await L.fill('#g-last', 'Liste'); await L.fill('#g-phone', '0170 1231234'); await L.check('#g-ok'); await L.click('#f-reg [type=submit]');
+  await L.waitForSelector('#userbar:not([hidden])', { timeout: 8000 }); ok(!(await L.$('#g-mail')) && (await L.$eval('#userbar', e => e.innerText)).includes('Lisa'), 'Person von der Liste ist ohne E-Mail sofort drin');
+  // Dani meldet sich ohne Handynummer an
+  const N = await phone(); await N.fill('#g-code', CODE); await N.click('#f-code [type=submit]'); await N.waitForSelector('#g-first');
+  await N.fill('#g-first', 'Daniela'); await N.fill('#g-last', 'Muster'); await N.check('#g-ok'); await N.click('#f-reg [type=submit]'); await N.waitForSelector('[data-act=claim][data-v=Dani]');
+  ok((await N.$eval('#view', e => e.innerText)).includes('Steffi'), 'ohne Handynummer werden die freigegebenen Namen angeboten');
+  await N.click('[data-act=claim][data-v=Dani]'); await N.waitForSelector('#userbar:not([hidden])', { timeout: 8000 });
+  await N.click('[data-tab=meine]').catch(() => {}); ok((await N.$eval('#userbar', e => e.innerText)).includes('Dani'), 'Dani ist ohne Handynummer und E-Mail angemeldet');
   // Helferliste als PDF (nur Orga)
   await A.click('[data-tab=helfer]'); await A.fill('#q', ''); await A.waitForTimeout(200); await A.click('[data-act=pdf-helfer]'); await A.waitForSelector('a[download]', { timeout: 15000 });
   const hl = await A.evaluate(async () => { const a = document.querySelector('a[download]'), buf = new Uint8Array(await (await fetch(a.href)).arrayBuffer()); return { name: a.download, head: String.fromCharCode(...buf.slice(0, 5)), data: Array.from(buf) }; });
@@ -128,6 +139,7 @@ let fails = 0, n = 0; const ok = (c, l) => { n++; console.log((c ? 'ok      ' : 
   await A.click('[data-act=organame-del][data-v="4"]'); await A.waitForTimeout(800);
   ok((await A.$$('[data-act=organame-del]')).length === 4, 'Orga kann eine Person wieder entfernen');
   ok(setup.includes('SOS-Empfänger') && setup.includes('Saskia Melis') && setup.includes('Frank Blasberg'), 'SOS-Empfänger stehen unter «Einrichten»');
+  ok(setup.includes('Ohne Kontaktdaten') && (await A.$$('[data-act=ncname-del]')).length === 2, 'Liste «Ohne Kontaktdaten» mit Dani und Steffi unter «Einrichten»');
   for (const [p, name] of [[A, 'A'], [B, 'B']]) ok(await p.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), name + ': nichts ragt seitlich heraus');
   await A.screenshot({ path: path.join(OUT, 'a-einrichten.png'), fullPage: true });
   await B.click('[data-s="' + s1 + '"][data-t="' + t1 + '"]'); await B.waitForTimeout(300); await B.screenshot({ path: path.join(OUT, 'b-dialog.png') }); await B.click('[data-d=cancel]');

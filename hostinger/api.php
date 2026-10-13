@@ -15,7 +15,7 @@ const SZ_DIR = __DIR__ . '/daten';
 const SZ_GUARD = "<?php http_response_code(404); exit; ?>\n";   // erste Zeile jeder Datendatei: ein direkter Aufruf zeigt nichts
 const SZ_JSON = JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES;
 const SZ_IDRE = '/^[a-z0-9]{4,24}$/';
-const SZ_MIG = 1;   // Stand der einmaligen Anpassungen an bestehenden Daten
+const SZ_MIG = 2;   // Stand der einmaligen Anpassungen an bestehenden Daten
 const SZ_MIG1_SOS = ['Nina Blasberg', 'Julian Richter', 'Magnus', 'Melli Schittek', 'Frank Blasberg', 'Betsy Arens', 'Saskia Melis'];
 const SZ_MIG1_NOTE = 'Orga-Team: Nina B., Julian R., Astrid und Susan.';
 const SZ_MAILRE = '/^[^\s@]+@[^\s@]+\.[^\s@]+$/u';
@@ -62,6 +62,10 @@ function load(bool $locked = false) { $db = read_data('db');
   if ((int)($db->mig ?? 0) < SZ_MIG) { $free = $locked ? null : lock();
     try { if (!$locked) { $again = read_data('db'); if (is_object($again) && isset($again->years)) $db = $again; }
       if (migrate($db)) { $db->rev = (int)($db->rev ?? 0) + 1; write_data('db', $db); } } finally { if ($free) $free(); } }
+  $kh = contacts_hash();
+  if ($kh !== '' && ($db->imp ?? '') !== $kh) { $free = $locked ? null : lock();
+    try { if (!$locked) { $again = read_data('db'); if (is_object($again) && isset($again->years)) $db = $again; }
+      if (($db->imp ?? '') !== $kh) { import_contacts($db); $db->imp = $kh; $db->rev = (int)($db->rev ?? 0) + 1; write_data('db', $db); } } finally { if ($free) $free(); } }
   return $db; }
 /* Bestehende Daten an eine neue Fassung anpassen, ohne Einträge anzufassen. Läuft je Stufe genau einmal. */
 function migrate($db): bool { $v = (int)($db->mig ?? 0); if ($v >= SZ_MIG) return false;
@@ -70,7 +74,35 @@ function migrate($db): bool { $v = (int)($db->mig ?? 0); if ($v >= SZ_MIG) retur
     if ($y) { if (!isset($y->info) || !is_object($y->info)) $y->info = new stdClass;
       if (!isset($y->info->sosNames)) $y->info->sosNames = SZ_MIG1_SOS;
       if (isset($y->info->notes) && is_array($y->info->notes)) foreach ($y->info->notes as $i => $n) if (is_string($n) && str_starts_with($n, 'Orga-Team:')) $y->info->notes[$i] = SZ_MIG1_NOTE; } }
+  if ($v < 2) { // Liste «Ohne Kontaktdaten» anlegen, Schreibweise Schitteck korrigieren
+    $a = (string)($db->active ?? ''); $y = ($a !== '' && isset($db->years->{$a}) && is_object($db->years->{$a})) ? $db->years->{$a} : null;
+    if ($y) { if (!isset($y->info) || !is_object($y->info)) $y->info = new stdClass;
+      if (!isset($y->info->noContact)) $y->info->noContact = ['Dani', 'Steffi'];
+      if (isset($y->info->sosNames) && is_array($y->info->sosNames)) $y->info->sosNames = array_map(fn($n) => $n === 'Melli Schittek' ? 'Melli Schitteck' : $n, $y->info->sosNames); } }
   $db->mig = SZ_MIG; return true; }
+/* Kontaktliste der Orga (kontakte.php, gesperrt wie start.php) einmalig in die Helferliste übernehmen.
+   Vorhandene Einträge werden nur ergänzt, nie überschrieben. Läuft erneut, wenn eine geänderte Liste hochgeladen wird. */
+function contacts_hash(): string { $f = __DIR__ . '/kontakte.php'; return is_file($f) ? (string)md5_file($f) : ''; }
+function import_contacts($db): int { $t = @file_get_contents(__DIR__ . '/kontakte.php'); if ($t === false) return 0;
+  $list = json_decode(substr($t, strpos($t, "\n") + 1)); if (!is_array($list)) return 0; $n = 0;
+  foreach ($list as $c) { if (!is_object($c)) continue;
+    $first = str($c->first ?? '', 60); $last = str($c->last ?? '', 60); $name = str($c->name ?? '', 80); if ($first === '') continue;
+    $phone = phone_clean($c->phone ?? ''); if (strlen(digits($phone)) < 6) $phone = '';
+    $email = str($c->email ?? '', 120); if (!preg_match(SZ_MAILRE, $email)) $email = ''; $again = !empty($c->again);
+    $hit = null;
+    if ($phone !== '') foreach ($db->helpers as $h) if (!empty($h->phone) && phone_key($h->phone) === phone_key($phone)) { $hit = $h; break; }
+    if (!$hit && $name !== '') foreach ($db->helpers as $h) if (nkey($h->name ?? '') === nkey($name)) {
+      if (!empty($h->by) || empty($h->phone) || $phone === '') { $hit = $h; unset($h->by); } else $hit = false; break; }
+    if ($hit === false) continue;
+    if ($hit) { foreach (['first' => $first, 'last' => $last, 'phone' => $phone, 'email' => $email] as $k => $v) if (empty($hit->{$k}) && $v !== '') $hit->{$k} = $v;
+      if ($again) $hit->again = true; continue; }
+    if ($name === '' || name_taken($db, $name)) $name = display_name($db, $first, $last);
+    $h = new stdClass; $h->id = new_id('h'); $h->first = $first; $h->last = $last; $h->phone = $phone; $h->email = $email; $h->again = $again; $h->name = $name; $h->sos = false; $h->src = 'liste'; $h->at = (int)round(microtime(true) * 1000);
+    $db->helpers[] = $h; $n++; }
+  return $n; }
+/* Namen, die sich ohne Handynummer und E-Mail anmelden dürfen (Orga pflegt sie unter «Einrichten») */
+function no_contact($db, string $name): bool { $a = (string)($db->active ?? ''); $l = $db->years->{$a}->info->noContact ?? [];
+  if (!is_array($l)) return false; foreach ($l as $x) if (is_string($x) && nkey($x) === nkey($name)) return true; return false; }
 function secret(): string { $s = read_data('geheim'); if (is_string($s) && $s !== '') return $s;
   $free = lock(); try { $s = read_data('geheim'); if (!is_string($s) || $s === '') { $s = bin2hex(random_bytes(32)); write_data('geheim', $s); } } finally { $free(); }
   return $s; }
@@ -278,17 +310,27 @@ try {
   if ($route === 'POST register') {
     $first = str($b->first ?? '', 60); $last = str($b->last ?? '', 60); $phone = phone_clean($b->phone ?? ''); $email = str($b->email ?? '', 120); $again = !empty($b->again); $claim = str($b->claim ?? '', 80); $check = !empty($b->check);
     if ($first === '' || $last === '') out(400, ['error' => 'name']);
-    if (strlen(digits($phone)) < 6) out(400, ['error' => 'phone']);
-    if (!preg_match(SZ_MAILRE, $email)) out(400, ['error' => 'email']);
+    if ($phone !== '' && strlen(digits($phone)) < 6) out(400, ['error' => 'phone']);
+    if ($email !== '' && !preg_match(SZ_MAILRE, $email)) out(400, ['error' => 'email']);
     [$db, $o] = mutate(function ($db) use ($secret, $tok, $first, $last, $phone, $email, $again, $claim, $check) {
       $role = who_is($db, $secret, $tok)['role']; $old = null;
+      if ($phone === '') { // ohne Handynummer: nur für Namen auf der Liste «Ohne Kontaktdaten»
+        if ($claim === '' || !no_contact($db, $claim)) return ['write' => false, 'err' => [400, 'phone']];
+        foreach ($db->helpers as $h) if (nkey($h->name ?? '') === nkey($claim)) {
+          if (!empty($h->phone) && empty($h->by)) return ['write' => false, 'err' => [409, 'taken']];
+          unset($h->by); if (empty($h->first)) $h->first = $first; if (empty($h->last)) $h->last = $last; if ($role === 'orga') $h->role = 'orga';
+          return ['id' => $h->id, 'back' => true]; }
+        $plan = plan_names($db); $h = new stdClass; $h->id = $tok['h']; $h->first = $first; $h->last = $last; $h->phone = ''; $h->email = ''; $h->again = false;
+        $h->name = $plan[nkey($claim)] ?? $claim; $h->sos = false; $h->at = (int)round(microtime(true) * 1000); if ($role === 'orga') $h->role = 'orga';
+        $db->helpers[] = $h; return ['id' => $h->id]; }
       foreach ($db->helpers as $h) if (empty($h->by) && !empty($h->phone) && phone_key($h->phone) === phone_key($phone)) { $old = $h; break; }
       if ($old) { if (nkey($old->first ?? '') !== nkey($first)) return ['write' => false, 'err' => [409, 'phone']];
-        $old->email = $email; $old->again = $again || !empty($old->again); if (empty($old->last)) $old->last = $last; if ($role === 'orga') $old->role = 'orga';
+        if ($email !== '') $old->email = $email; $old->again = $again || !empty($old->again); if (empty($old->last)) $old->last = $last; if ($role === 'orga') $old->role = 'orga';
         return ['id' => $old->id, 'back' => true]; }
       $mine = find_helper($db, $tok['h']);
-      if ($mine) { $mine->first = $first; $mine->last = $last; $mine->phone = $phone; $mine->email = $email; $mine->again = $again; if ($role === 'orga') $mine->role = 'orga'; return ['id' => $mine->id]; }
+      if ($mine) { $mine->first = $first; $mine->last = $last; $mine->phone = $phone; if ($email !== '') $mine->email = $email; $mine->again = $again; if ($role === 'orga') $mine->role = 'orga'; return ['id' => $mine->id]; }
       if ($check) return ['write' => false, 'need' => true];
+      if ($email === '') return ['write' => false, 'err' => [400, 'email']];
       $name = '';
       if ($claim !== '') { $plan = plan_names($db); $comp = null; foreach ($db->helpers as $h) if (!empty($h->by) && nkey($h->name ?? '') === nkey($claim)) { $comp = $h; break; }
         if ($comp) { $name = $comp->name; $db->helpers = array_values(array_filter($db->helpers, fn($x) => $x !== $comp)); }

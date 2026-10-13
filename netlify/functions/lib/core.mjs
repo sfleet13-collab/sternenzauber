@@ -198,17 +198,26 @@ export async function handle(req, store, seed) {
     if (route === 'POST register') {
       const first = str(b.first, 60), last = str(b.last, 60), phone = phoneClean(b.phone), email = str(b.email, 120), again = !!b.again, claim = str(b.claim, 80);
       if (!first || !last) return res(400, { error: 'name' });
-      if (digits(phone).length < 6) return res(400, { error: 'phone' });
-      if (!MAILRE.test(email)) return res(400, { error: 'email' });
+      if (phone && digits(phone).length < 6) return res(400, { error: 'phone' });
+      if (email && !MAILRE.test(email)) return res(400, { error: 'email' });
       const r = await mutate(store, seed, async db => {
         const role = (await whoIs(db, secret, tok)).role;
+        if (!phone) { // ohne Handynummer: nur für Namen auf der Liste «Ohne Kontaktdaten»
+          const y = db.years[db.active] || {}, nc = Array.isArray((y.info || {}).noContact) ? y.info.noContact : [];
+          if (!claim || !nc.some(n => key(n) === key(claim))) return { write: false, err: res(400, { error: 'phone' }) };
+          const ex = db.helpers.find(h => key(h.name) === key(claim));
+          if (ex) { if (ex.phone && !ex.by) return { write: false, err: res(409, { error: 'taken' }) };
+            delete ex.by; if (!ex.first) ex.first = first; if (!ex.last) ex.last = last; if (role === 'orga') ex.role = 'orga'; return { id: ex.id, back: true }; }
+          const plan = planNames(db), h = { id: tok.h, first, last, phone: '', email: '', again: false, name: plan.get(key(claim)) || claim, sos: false, at: Date.now() };
+          if (role === 'orga') h.role = 'orga'; db.helpers.push(h); return { id: h.id }; }
         const old = db.helpers.find(h => !h.by && h.phone && phoneKey(h.phone) === phoneKey(phone));
         if (old) { if (key(old.first) !== key(first)) return { write: false, err: res(409, { error: 'phone' }) };
-          old.email = email; old.again = again || !!old.again; if (!old.last) old.last = last; if (role === 'orga') old.role = 'orga';
+          if (email) old.email = email; old.again = again || !!old.again; if (!old.last) old.last = last; if (role === 'orga') old.role = 'orga';
           return { id: old.id, back: true }; }
         const mine = db.helpers.find(h => h.id === tok.h);
-        if (mine) { Object.assign(mine, { first, last, phone, email, again }); if (role === 'orga') mine.role = 'orga'; return { id: mine.id }; }
+        if (mine) { Object.assign(mine, { first, last, phone, again }, email ? { email } : {}); if (role === 'orga') mine.role = 'orga'; return { id: mine.id }; }
         if (b.check) return { write: false, need: true };
+        if (!email) return { write: false, err: res(400, { error: 'email' }) };
         let name = '';
         if (claim) { const plan = planNames(db), comp = db.helpers.find(h => h.by && key(h.name) === key(claim));
           if (comp) { name = comp.name; db.helpers = db.helpers.filter(h => h !== comp); }
