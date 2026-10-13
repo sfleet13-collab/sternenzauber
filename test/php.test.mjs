@@ -55,6 +55,11 @@ try {
   const d2 = await call('POST', 'register', { first: 'Dani', last: 'X', phone: '', email: '', claim: 'Dani' }, (await call('POST', 'login', { code: S0.codes.helper })).body.token);
   ok(d1.status === 200 && d2.status === 200 && d1.body.me.id === d2.body.me.id && data('db.php').helpers.filter(h => h.name === 'Dani').length === 1, 'Dani meldet sich ohne Nummer an, auch auf einem zweiten Handy ohne Doppel-Eintrag');
   ok((await call('POST', 'register', { first: 'X', last: 'Y', phone: '', email: '', claim: 'Assi' }, (await call('POST', 'login', { code: S0.codes.helper })).body.token)).status === 400, 'andere Namen brauchen weiterhin eine Handynummer');
+  const pk1 = await call('POST', 'register', { pick: 'neu n.' }, (await call('POST', 'login', { code: S0.codes.helper })).body.token);
+  ok(pk1.status === 200 && pk1.body.me.id === dk.helpers.find(h => h.name === 'Neu N.').id && pk1.body.back, 'Namen auswählen: vorhandener Eintrag wird übernommen, kein Doppel');
+  const pk2 = await call('POST', 'register', { pick: 'Steffi' }, (await call('POST', 'login', { code: S0.codes.helper })).body.token);
+  ok(pk2.status === 200 && data('db.php').helpers.filter(h => h.name === 'Steffi').length === 1, 'Namen auswählen: Name aus dem Plan wird angelegt');
+  ok((await call('POST', 'register', { pick: 'Gibtsnicht' }, (await call('POST', 'login', { code: S0.codes.helper })).body.token)).status === 404, 'unbekannter Name wird abgelehnt');
   ok((await call('PUT', 'db')).status === 405, 'andere Methoden werden abgelehnt');
   ok((await call('POST', 'patch', null, 'kein.ausweis')).status === 401, 'ungültiger Ausweis');
 } finally { php.kill(); }

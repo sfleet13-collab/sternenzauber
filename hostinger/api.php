@@ -308,7 +308,16 @@ try {
     out(200, ['db' => view($db, $me), 'rev' => (int)($db->rev ?? 0), 'me' => $me]); }
 
   if ($route === 'POST register') {
-    $first = str($b->first ?? '', 60); $last = str($b->last ?? '', 60); $phone = phone_clean($b->phone ?? ''); $email = str($b->email ?? '', 120); $again = !empty($b->again); $claim = str($b->claim ?? '', 80); $check = !empty($b->check);
+    $first = str($b->first ?? '', 60); $last = str($b->last ?? '', 60); $phone = phone_clean($b->phone ?? ''); $email = str($b->email ?? '', 120); $again = !empty($b->again); $claim = str($b->claim ?? '', 80); $check = !empty($b->check); $pick = str($b->pick ?? '', 80);
+    if ($pick !== '') { // «Ich stehe schon im Plan»: Namen aus der Liste wählen, ohne Handynummer
+      [$db, $o] = mutate(function ($db) use ($secret, $tok, $pick) { $role = who_is($db, $secret, $tok)['role'];
+        foreach ($db->helpers as $h) if (nkey($h->name ?? '') === nkey($pick)) { unset($h->by); if ($role === 'orga') $h->role = 'orga'; return ['id' => $h->id, 'back' => true]; }
+        $plan = plan_names($db); if (!isset($plan[nkey($pick)])) return ['write' => false, 'err' => [404, 'unknown']];
+        $h = new stdClass; $h->id = $tok['h']; $h->first = ''; $h->last = ''; $h->phone = ''; $h->email = ''; $h->again = false; $h->name = $plan[nkey($pick)]; $h->sos = false; $h->at = (int)round(microtime(true) * 1000);
+        if ($role === 'orga') $h->role = 'orga'; $db->helpers[] = $h; return ['id' => $h->id]; });
+      if (isset($o['err'])) out($o['err'][0], ['error' => $o['err'][1]]);
+      $nt = ['r' => $tok['r'] ?? 'h', 'h' => $o['id'], 't' => time()]; if (isset($tok['k'])) $nt['k'] = $tok['k']; $me = who_is($db, $secret, $nt);
+      out(200, ['token' => sign($secret, $nt), 'me' => $me, 'db' => view($db, $me), 'rev' => (int)($db->rev ?? 0), 'back' => !empty($o['back'])]); }
     if ($first === '' || $last === '') out(400, ['error' => 'name']);
     if ($phone !== '' && strlen(digits($phone)) < 6) out(400, ['error' => 'phone']);
     if ($email !== '' && !preg_match(SZ_MAILRE, $email)) out(400, ['error' => 'email']);

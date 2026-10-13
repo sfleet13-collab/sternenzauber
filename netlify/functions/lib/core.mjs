@@ -196,7 +196,16 @@ export async function handle(req, store, seed) {
     }
 
     if (route === 'POST register') {
-      const first = str(b.first, 60), last = str(b.last, 60), phone = phoneClean(b.phone), email = str(b.email, 120), again = !!b.again, claim = str(b.claim, 80);
+      const first = str(b.first, 60), last = str(b.last, 60), phone = phoneClean(b.phone), email = str(b.email, 120), again = !!b.again, claim = str(b.claim, 80), pick = str(b.pick, 80);
+      if (pick) { // «Ich stehe schon im Plan»: Namen aus der Liste wählen, ohne Handynummer
+        const r = await mutate(store, seed, async db => { const role = (await whoIs(db, secret, tok)).role;
+          const ex = db.helpers.find(h => key(h.name) === key(pick)); if (ex) { delete ex.by; if (role === 'orga') ex.role = 'orga'; return { id: ex.id, back: true }; }
+          const plan = planNames(db); if (!plan.has(key(pick))) return { write: false, err: res(404, { error: 'unknown' }) };
+          const h = { id: tok.h, first: '', last: '', phone: '', email: '', again: false, name: plan.get(key(pick)), sos: false, at: Date.now() }; if (role === 'orga') h.role = 'orga';
+          db.helpers.push(h); return { id: h.id }; });
+        if (r.out.err) return r.out.err;
+        const nt = { r: tok.r, h: r.out.id, k: tok.k, t: Date.now() }, me = await whoIs(r.db, secret, nt);
+        return res(200, { token: await sign(secret, nt), me, db: view(r.db, me), rev: r.db.rev || 0, back: !!r.out.back }); }
       if (!first || !last) return res(400, { error: 'name' });
       if (phone && digits(phone).length < 6) return res(400, { error: 'phone' });
       if (email && !MAILRE.test(email)) return res(400, { error: 'email' });

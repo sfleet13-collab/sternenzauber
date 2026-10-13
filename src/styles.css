@@ -280,3 +280,7 @@ a.btn.primary { color: var(--brand-fg) }
 .made .heart { color: var(--sos); font-size: 15px }
 .made small { display: block; font-size: 12px }
 .field select { font: inherit }
+
+.gatepick { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; justify-content: space-between; margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--line); font-weight: 600 }
+.claims.pick { max-height: 46vh; overflow-y: auto; margin: 12px 0 }
+.claims.pick [hidden] { display: none }

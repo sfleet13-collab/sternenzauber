@@ -151,6 +151,9 @@ const orgaNames = () => { const i = Y().info || {}; if (Array.isArray(i.orgaName
 const listText = l => l.length < 2 ? l.join('') : l.slice(0, -1).join(', ') + ' und ' + l[l.length - 1];
 function setOrgaNames(y, l) { y.info.orgaNames = l; const notes = (Array.isArray(y.info.notes) ? y.info.notes : []).slice(), i = notes.findIndex(isOrgaNote), t = ORGA_PREFIX + ' ' + listText(l) + '.';
   if (!l.length) { if (i >= 0) notes.splice(i, 1); } else if (i >= 0) notes[i] = t; else notes.push(t); y.info.notes = notes; }
+/* Alle Namen aus Plan und Helferliste für «Ich stehe schon im Plan» */
+function pickNames() { const out = new Map(); model().people.forEach((p, k) => out.set(k, p.name)); DB.helpers.forEach(h => { if (h.name && !out.has(key(h.name))) out.set(key(h.name), h.name); });
+  return [...out.values()].sort((a, b) => a.localeCompare(b, 'de')); }
 /* Namen, die sich ohne Handynummer und E-Mail anmelden dürfen. Die Orga pflegt sie unter «Einrichten». */
 const ncNames = () => { const l = (Y().info || {}).noContact; return Array.isArray(l) ? l : []; };
 /* namentlich benannte SOS-Empfänger: die Orga pflegt die Liste unter «Einrichten». Gilt, sobald sich die Person mit diesem Namen anmeldet. */
@@ -206,8 +209,14 @@ function vGate() {
   if (S.gate === 'reg') h = '<h2>Wer bist du?</h2><p class="muted">' + (S.pendingRole ? 'Auch im Orga-Team bist du Helfer. Trag dich einmal ein, dann kannst du selbst Schichten übernehmen und stehst in der Helferliste. Deine Orga-Rechte bleiben.' : 'Stehst du schon auf unserer Helferliste, erkennen wir dich an Vorname und Handynummer. Danach merkt sich dein Handy die Anmeldung.') + '</p><form id="f-reg" novalidate>'
     + '<div class="two"><div class="field"><label for="g-first">Vorname</label><input id="g-first" autocomplete="given-name" value="' + esc(P.first || '') + '"></div><div class="field"><label for="g-last">Nachname</label><input id="g-last" autocomplete="family-name" value="' + esc(P.last || '') + '"></div></div>'
     + '<div class="field"><label for="g-phone">Handynummer</label><input id="g-phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="z. B. 0171 2345678" value="' + esc(P.phone || '') + '"></div>'
-    + '<label class="check"><input type="checkbox" id="g-ok"' + (P.ok ? ' checked' : '') + '><span>Ich bin einverstanden, dass mein Name im Helferplan steht und die Orga meine Kontaktdaten für den Sternenzauber nutzt.</span></label>'
-    + '<p class="hint warn" id="g-err" hidden></p><div class="row"><button type="button" class="btn" data-act="gate" data-v="start">Zurück</button><button type="submit" class="btn primary">Weiter</button></div></form>';
+    + '<p class="hint">Deine Handynummer und E-Mail sieht nur die Orga, nur für den Sternenzauber.</p>'
+    + '<p class="hint warn" id="g-err" hidden></p><div class="row"><button type="button" class="btn" data-act="gate" data-v="start">Zurück</button><button type="submit" class="btn primary">Weiter</button></div></form>'
+    + '<div class="gatepick"><span>Du stehst schon im Plan?</span><button type="button" class="btn" data-act="gate" data-v="pick">Namen auswählen</button></div>';
+  else if (S.gate === 'pick') { const q = key(S.pickQ || ''), names = pickNames().filter(n => !q || key(n).includes(q));
+    h = '<h2>Ich stehe schon im Plan</h2><p class="muted">Tipp auf deinen Namen. Handynummer und E-Mail brauchst du dafür nicht.</p>'
+      + '<div class="field"><label for="g-pq">Namen suchen</label><input id="g-pq" autocomplete="off" value="' + esc(S.pickQ || '') + '" placeholder="z. B. Astrid"></div>'
+      + '<p class="hint warn" id="g-err" hidden></p><div class="claims pick">' + (names.length ? names.map(n => '<button class="btn" data-act="pick" data-v="' + esc(n) + '">' + esc(n) + '</button>').join('') : '<p class="muted">Kein Name gefunden. Dann melde dich bitte neu an.</p>') + '</div>'
+      + '<div class="row"><button type="button" class="btn" data-act="gate" data-v="reg">Zurück</button></div>'; }
   else if (S.gate === 'reg2') h = '<h2>Neu dabei, ' + esc(P.first || '') + '?</h2><p class="muted">Deine Handynummer kennen wir noch nicht. Gib noch deine E-Mail an, dann bist du dabei. Handynummer und E-Mail sieht nur die Orga.</p><form id="f-reg2" novalidate>'
     + '<div class="field"><label for="g-mail">E-Mail</label><input id="g-mail" type="email" inputmode="email" autocomplete="email" placeholder="name@beispiel.de" value="' + esc(P.email || '') + '"></div>'
     + '<label class="check"><input type="checkbox" id="g-again"><span>Ihr dürft mich nächstes Jahr wieder anschreiben, wenn der Helferplan öffnet. (freiwillig)</span></label>'
@@ -254,7 +263,6 @@ view.addEventListener('submit', e => {
       err => { lock(f, false); gerr(err.code === 'pw' ? 'Das Passwort stimmt nicht.' : NET); }); }
   else if (id === 'f-reg') { const first = gval('g-first'), last = gval('g-last'), phone = gval('g-phone').replace(/[^\d+]/g, '');
     if (!first || !last) return gerr('Bitte Vorname und Nachname eintragen.');
-    if (!$('#g-ok').checked) return gerr('Bitte bestätige das Einverständnis.');
     const P0 = S.pending || {};
     if (!phone) { const nc = ncNames(); if (!nc.length) return gerr('Bitte deine Handynummer eintragen.');
       S.pending = { first, last, phone: '', email: '', again: false, ok: true, nc: true, cands: nc }; S.gate = 'claim'; return render(); }
@@ -825,6 +833,9 @@ view.addEventListener('click', e => {
   const cal = e.target.closest('[data-cal]'); if (cal) { const [s, t] = cal.dataset.cal.split('|'), mm = model(), sh = mm.shifts.find(x => x.id === s), st = mm.stations.find(x => x.id === t); if (sh && st) showIcs([{ sh, st }]); return; }
   const b = e.target.closest('[data-act]'); if (!b) return; const a = b.dataset.act, v = b.dataset.v, m = model();
   if (a === 'claim') finishReg(v);
+  else if (a === 'pick') {
+    view.querySelectorAll('[data-act=pick]').forEach(x => { x.disabled = true; });
+    api('register', { pick: v }).then(r => signIn(r, 'Willkommen, ' + v), e => { if (netFail(e)) return; render(); gerr(e.status ? 'Das hat nicht geklappt. Bitte melde dich bei der Orga.' : NET); }); }
   else if (a === 'gate') { S.gate = v; if (v === 'start') S.pendingRole = null; render(); const f = view.querySelector('input'); if (f) f.focus(); }
   else if (a === 'day') { S.day = v; S.shift = null; render(); }
   else if (a === 'shift') { S.shift = v; render(); }
@@ -877,7 +888,9 @@ view.addEventListener('click', e => {
   else if (a === 'profile') { const h = meHelper(); if (h) openDlg({ type: 'hreg', name: h.name, h, self: true }); }
   else if (a === 'cal-all') { const P = m.people.get(key(myName())); if (P) showIcs(P.slots); }
 });
-view.addEventListener('input', e => { if (e.target.id === 'q') { S.q = e.target.value; render(); } });
+view.addEventListener('input', e => { if (e.target.id === 'q') { S.q = e.target.value; render(); }
+  else if (e.target.id === 'g-pq') { S.pickQ = e.target.value; const q = key(S.pickQ); view.querySelectorAll('[data-act=pick]').forEach(b => { b.hidden = !!q && !key(b.dataset.v).includes(q); }); } });
+view.addEventListener('change', e => { if (e.target.id === 'g-pok') S.pickOk = e.target.checked; });
 view.addEventListener('change', e => { if (e.target.id === 'grpsel') { S.group = e.target.value; render(); } else if (e.target.id === 'g-show') { const f = $('#g-pw'); if (f) f.type = e.target.checked ? 'text' : 'password'; } });
 (NARROW.addEventListener ? NARROW.addEventListener.bind(NARROW, 'change') : NARROW.addListener.bind(NARROW))(() => render());
 window.addEventListener('storage', e => {

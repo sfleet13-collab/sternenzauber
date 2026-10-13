@@ -7,7 +7,7 @@ let fails = 0, n = 0; const ok = (c, l) => { n++; console.log((c ? 'ok      ' : 
 (async () => {
   const b = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium' }).catch(() => chromium.launch()), errs = [];
   const phone = async () => { const ctx = await b.newContext({ viewport: { width: 390, height: 800 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 }); const p = await ctx.newPage(); p.on('pageerror', e => errs.push(e.message)); p.on('console', m => { if (m.type() === 'error' && !/favicon|401/.test(m.text())) errs.push('console: ' + m.text()); }); await p.goto(URL0); await p.waitForTimeout(300); return p; };
-  const reg = async (p, first, last, tel, mail) => { await p.fill('#g-first', first); await p.fill('#g-last', last); await p.fill('#g-phone', tel); await p.check('#g-ok'); await p.click('#f-reg [type=submit]');
+  const reg = async (p, first, last, tel, mail) => { await p.fill('#g-first', first); await p.fill('#g-last', last); await p.fill('#g-phone', tel); await p.click('#f-reg [type=submit]');
     await p.waitForSelector('#g-mail', { timeout: 8000 }); await p.fill('#g-mail', mail); await p.click('#f-reg2 [type=submit]'); await p.waitForSelector('#userbar:not([hidden])', { timeout: 8000 }); };
   const bar = p => p.evaluate(() => document.querySelector('#userbar').innerText.split('\n')[0]);
   const refresh = async p => { await p.click('[data-h=refresh]'); await p.waitForTimeout(700); };
@@ -111,11 +111,17 @@ let fails = 0, n = 0; const ok = (c, l) => { n++; console.log((c ? 'ok      ' : 
   ok((await A.$eval('#view', e => e.innerText)).includes('unterwegs: Saskia M.'), 'Orga sieht, wer unterwegs ist'); await B.click('[data-tab=plan]');
   // Wer auf der eingelesenen Liste steht, ist mit Vorname und Handynummer sofort drin (ohne E-Mail)
   const L = await phone(); await L.fill('#g-code', CODE); await L.click('#f-code [type=submit]'); await L.waitForSelector('#g-first');
-  await L.fill('#g-first', 'Lisa'); await L.fill('#g-last', 'Liste'); await L.fill('#g-phone', '0170 1231234'); await L.check('#g-ok'); await L.click('#f-reg [type=submit]');
+  await L.fill('#g-first', 'Lisa'); await L.fill('#g-last', 'Liste'); await L.fill('#g-phone', '0170 1231234'); await L.click('#f-reg [type=submit]');
   await L.waitForSelector('#userbar:not([hidden])', { timeout: 8000 }); ok(!(await L.$('#g-mail')) && (await L.$eval('#userbar', e => e.innerText)).includes('Lisa'), 'Person von der Liste ist ohne E-Mail sofort drin');
+  // «Ich stehe schon im Plan»: Namen suchen und antippen
+  const P2 = await phone(); await P2.fill('#g-code', CODE); await P2.click('#f-code [type=submit]'); await P2.waitForSelector('#g-first');
+  await P2.click('[data-act=gate][data-v=pick]'); await P2.fill('#g-pq', 'ass'); await P2.waitForTimeout(150);
+  ok(await P2.isVisible('[data-act=pick][data-v=Assi]') && !(await P2.isVisible('[data-act=pick][data-v=Dani]')), 'Namenssuche filtert die Liste');
+  ok(!(await P2.$('#g-pok')), 'kein Häkchen für das Einverständnis nötig'); await P2.click('[data-act=pick][data-v=Assi]'); await P2.waitForSelector('#userbar:not([hidden])', { timeout: 8000 });
+  ok((await P2.$eval('#userbar', e => e.innerText)).includes('Assi'), 'mit einem Tipp als «Assi» angemeldet');
   // Dani meldet sich ohne Handynummer an
   const N = await phone(); await N.fill('#g-code', CODE); await N.click('#f-code [type=submit]'); await N.waitForSelector('#g-first');
-  await N.fill('#g-first', 'Daniela'); await N.fill('#g-last', 'Muster'); await N.check('#g-ok'); await N.click('#f-reg [type=submit]'); await N.waitForSelector('[data-act=claim][data-v=Dani]');
+  await N.fill('#g-first', 'Daniela'); await N.fill('#g-last', 'Muster'); await N.click('#f-reg [type=submit]'); await N.waitForSelector('[data-act=claim][data-v=Dani]');
   ok((await N.$eval('#view', e => e.innerText)).includes('Steffi'), 'ohne Handynummer werden die freigegebenen Namen angeboten');
   await N.click('[data-act=claim][data-v=Dani]'); await N.waitForSelector('#userbar:not([hidden])', { timeout: 8000 });
   await N.click('[data-tab=meine]').catch(() => {}); ok((await N.$eval('#userbar', e => e.innerText)).includes('Dani'), 'Dani ist ohne Handynummer und E-Mail angemeldet');
