@@ -3,7 +3,7 @@
    Aufruf: python3 src/build.py"""
 import os, re, json, base64
 
-VERSION = '13.10.2026 k'
+VERSION = '14.10.2026 l'
 # Startwerte beim allerersten Aufruf. Danach gelten die Zugänge, die die Orga in der App unter «Einrichten» festlegt.
 START_CODES = {'helper': 'STERN2026', 'orga': 'Zimtstern-Bratapfel-58'}
 ORGA_NOTE = 'Orga-Team: Nina B., Julian R., Astrid und Susan.'
@@ -23,7 +23,7 @@ def start_db(codes):
     if ORGA_NOTE not in year['info']['notes']: year['info']['notes'].append(ORGA_NOTE)
     year['info']['sosNames'] = list(SOS_NAMES)
     year['info']['noContact'] = ['Dani', 'Steffi']
-    return {'mig': 2, 'rev': 0, 'active': '2026', 'years': {'2026': year}, 'helpers': [], 'sos': [], 'codes': codes}
+    return {'mig': 3, 'rev': 0, 'active': '2026', 'years': {'2026': year}, 'helpers': [], 'sos': [], 'codes': codes}
 
 def module(code, name, exports, pre=''):
     code = re.sub(r'^import .*$', '', code, flags=re.M); code = re.sub(r'^export ', '', code, flags=re.M)
@@ -117,7 +117,7 @@ shutil.copy(os.path.join(root, 'server-php', 'api.php'), os.path.join(H, 'api.ph
 GUARD = '<?php http_response_code(404); exit; ?>\n'
 wr(GUARD + json.dumps(start_db(START_CODES), ensure_ascii=False), 'hostinger', 'start.php')
 # Kontaktliste der Orga (nur lokal in private/, nie im Git): wird zu hostinger/kontakte.php, gesperrt wie start.php
-KMAP = {'Manuela O.': 'Manuela', 'Phillipp L.': 'Phillipp'}   # Name in der Liste -> Name im Plan
+KMAP = {'Manuela O.': 'Manuela', 'Phillipp L.': 'Philip'}   # Name in der Liste -> Name im Plan
 kcsv = os.path.join(root, 'private', 'kontakte.csv'); kout = os.path.join(root, 'hostinger', 'kontakte.php')
 if os.path.exists(kcsv):
     import csv
@@ -129,6 +129,7 @@ if os.path.exists(kcsv):
         if len(re.sub(r'\D', '', phone)) < 6: phone = ''
         if phone and phone in seen: continue
         seen.add(phone)
+        if name == 'Philip': r[1] = 'Philip'
         rows.append({'name': name, 'first': re.sub(r'\s+', ' ', r[1]), 'last': re.sub(r'\s+', ' ', r[2]), 'phone': phone, 'email': email, 'again': r[5].lower().startswith('ja')})
     wr(GUARD + json.dumps(rows, ensure_ascii=False), 'hostinger', 'kontakte.php')
     print('kontakte.php:', len(rows), 'Personen')

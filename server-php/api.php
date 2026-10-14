@@ -15,7 +15,7 @@ const SZ_DIR = __DIR__ . '/daten';
 const SZ_GUARD = "<?php http_response_code(404); exit; ?>\n";   // erste Zeile jeder Datendatei: ein direkter Aufruf zeigt nichts
 const SZ_JSON = JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES;
 const SZ_IDRE = '/^[a-z0-9]{4,24}$/';
-const SZ_MIG = 2;   // Stand der einmaligen Anpassungen an bestehenden Daten
+const SZ_MIG = 3;   // Stand der einmaligen Anpassungen an bestehenden Daten
 const SZ_MIG1_SOS = ['Nina Blasberg', 'Julian Richter', 'Magnus', 'Melli Schittek', 'Frank Blasberg', 'Betsy Arens', 'Saskia Melis'];
 const SZ_MIG1_NOTE = 'Orga-Team: Nina B., Julian R., Astrid und Susan.';
 const SZ_MAILRE = '/^[^\s@]+@[^\s@]+\.[^\s@]+$/u';
@@ -79,7 +79,17 @@ function migrate($db): bool { $v = (int)($db->mig ?? 0); if ($v >= SZ_MIG) retur
     if ($y) { if (!isset($y->info) || !is_object($y->info)) $y->info = new stdClass;
       if (!isset($y->info->noContact)) $y->info->noContact = ['Dani', 'Steffi'];
       if (isset($y->info->sosNames) && is_array($y->info->sosNames)) $y->info->sosNames = array_map(fn($n) => $n === 'Melli Schittek' ? 'Melli Schitteck' : $n, $y->info->sosNames); } }
+  if ($v < 3) rename_person($db, 'Phillipp', 'Philip', ['Philipp' => 'Philip']); // richtige Schreibweise: Philip (Leyen)
   $db->mig = SZ_MIG; return true; }
+/* Einen Namen überall umbenennen: in allen Feldern des Plans, bei «eingetragen von» und in der Helferliste */
+function rename_person($db, string $old, string $new, array $firsts = []): void {
+  foreach ($db->years as $y) { if (!is_object($y) || !isset($y->shifts) || !is_array($y->shifts)) continue;
+    foreach ($y->shifts as $sh) { if (!isset($sh->cells) || !is_object($sh->cells)) continue;
+      foreach ($sh->cells as $c) { if (!is_object($c)) continue;
+        if (isset($c->people) && is_array($c->people)) { $c->people = array_values(array_unique(array_map(fn($n) => $n === $old ? $new : $n, $c->people))); }
+        if (isset($c->by) && is_object($c->by) && isset($c->by->{$old})) { $c->by->{$new} = $c->by->{$old}; unset($c->by->{$old}); } } } }
+  foreach ($db->helpers as $h) { if (($h->name ?? '') === $old) $h->name = $new;
+    if (($h->name ?? '') === $new && isset($firsts[$h->first ?? ''])) $h->first = $firsts[$h->first]; } }
 /* Kontaktliste der Orga (kontakte.php, gesperrt wie start.php) einmalig in die Helferliste übernehmen.
    Vorhandene Einträge werden nur ergänzt, nie überschrieben. Läuft erneut, wenn eine geänderte Liste hochgeladen wird. */
 function contacts_hash(): string { $f = __DIR__ . '/kontakte.php'; return is_file($f) ? (string)md5_file($f) : ''; }

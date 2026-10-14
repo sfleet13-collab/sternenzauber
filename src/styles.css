@@ -284,3 +284,12 @@ a.btn.primary { color: var(--brand-fg) }
 .gatepick { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; justify-content: space-between; margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--line); font-weight: 600 }
 .claims.pick { max-height: 46vh; overflow-y: auto; margin: 12px 0 }
 .claims.pick [hidden] { display: none }
+
+.tabs button.t-sos .n { background: var(--sos); color: #FFFFFF; font-weight: 700 }
+.sosbanner { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; background: var(--sos); color: #FFFFFF; border-radius: 14px; padding: 12px 14px 12px 16px; box-shadow: 0 6px 20px rgba(211, 31, 48, .28) }
+.sosbanner .sb-txt { flex: 1 1 200px; line-height: 1.35 }
+.sosbanner small { opacity: .85 }
+.sosbanner .btn.sosgo { background: #FFFFFF; color: var(--sos); border-color: #FFFFFF; font-weight: 700 }
+.sb-dot { width: 12px; height: 12px; border-radius: 50%; background: #FFFFFF; flex: none; animation: sbpulse 1.2s ease-in-out infinite }
+@keyframes sbpulse { 0%, 100% { opacity: 1; transform: scale(1) } 50% { opacity: .35; transform: scale(.7) } }
+@media (prefers-reduced-motion: reduce) { .sb-dot { animation: none } }

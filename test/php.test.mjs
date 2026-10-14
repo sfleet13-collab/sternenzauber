@@ -28,12 +28,12 @@ try {
   ok(JSON.stringify(data('db.php').years['2026'].shifts[0].cells).startsWith('{') && Array.isArray(data('db.php').helpers) && Array.isArray(data('db.php').sos), 'Listen bleiben Listen, Felder bleiben Felder');
   // Bestehender Stand ohne SOS-Empfänger und mit altem Orga-Team wird einmalig angepasst, Einträge bleiben
   const fs = await import('node:fs'), f = join(site, 'daten', 'db.php'), old = data('db.php'), guard = readFileSync(f, 'utf8').split('\n')[0] + '\n';
-  delete old.mig; delete old.years['2026'].info.sosNames; old.years['2026'].info.notes = old.years['2026'].info.notes.map(n => n.startsWith('Orga-Team:') ? 'Orga-Team: Juri, Assi, Nina, Magnus und Susan.' : n);
+  delete old.mig; delete old.years['2026'].info.sosNames; { const sh = old.years['2026'].shifts.find(s => Object.values(s.cells).some(c => (c.people || []).includes('Philip'))); for (const c of Object.values(sh.cells)) if (c.people) c.people = c.people.map(n => n === 'Philip' ? 'Phillipp' : n); } old.years['2026'].info.notes = old.years['2026'].info.notes.map(n => n.startsWith('Orga-Team:') ? 'Orga-Team: Juri, Assi, Nina, Magnus und Susan.' : n);
   const helpersBefore = old.helpers.length, revBefore = old.rev; fs.writeFileSync(f, guard + JSON.stringify(old));
   // auch wenn auf dem Server noch die alte start.php liegt
   const sf = join(site, 'start.php'), st0 = readFileSync(sf, 'utf8'), sj = JSON.parse(st0.slice(st0.indexOf('\n') + 1)); delete sj.mig; delete sj.years['2026'].info.sosNames; fs.writeFileSync(sf, st0.split('\n')[0] + '\n' + JSON.stringify(sj));
   await call('POST', 'login', { code: S0.codes.helper }); const neu = data('db.php');
-  ok(neu.mig === 2 && neu.years['2026'].info.sosNames.includes('Melli Schitteck') && neu.years['2026'].info.noContact.includes('Dani') && neu.years['2026'].info.sosNames.includes('Saskia Melis') && neu.years['2026'].info.sosNames.length === 7, 'bestehender Stand bekommt die SOS-Empfänger');
+  ok(neu.mig === 3 && !JSON.stringify(neu).includes('Phillipp') && JSON.stringify(neu.years).includes('"Philip"') && neu.years['2026'].info.sosNames.includes('Melli Schitteck') && neu.years['2026'].info.noContact.includes('Dani') && neu.years['2026'].info.sosNames.includes('Saskia Melis') && neu.years['2026'].info.sosNames.length === 7, 'bestehender Stand bekommt die SOS-Empfänger');
   ok(neu.years['2026'].info.notes.includes('Orga-Team: Nina B., Julian R., Astrid und Susan.') && !neu.years['2026'].info.notes.some(n => n.includes('Juri')), 'Orga-Team in den Hinweisen aktualisiert');
   ok(neu.helpers.length === helpersBefore && neu.rev === revBefore + 1, 'Helferliste und Einträge bleiben dabei erhalten');
   await call('POST', 'login', { code: S0.codes.helper }); ok(data('db.php').rev === revBefore + 1, 'die Anpassung läuft nur einmal');

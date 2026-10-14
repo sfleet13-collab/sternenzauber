@@ -92,7 +92,7 @@ async function pull(manual) {
   busy = true; const sent = clone(DB);
   try { const r = await api('db?rev=' + (BASE.rev || 0) + '&role=' + ME.role);
     if (!r.same) { const later = diff(sent, DB); BASE = r.db; if (!BASE.codes) BASE.codes = {}; DB = applyOps(clone(BASE), later); }
-    applyMe(r.me); refreshDlg(); cache(); if (!r.same || manual === true || !ME) render();
+    applyMe(r.me); refreshDlg(); cache(); if (!r.same || manual === true || !ME) render(); sosNotify();
     if (manual === true && ME) toast('Stand aktualisiert');
   } catch (e) { if (!netFail(e) && manual === true) toast(NET); }
   finally { busy = false; if (ME && (again || diff(BASE, DB).length)) { again = false; push(); } }
@@ -503,6 +503,21 @@ function homeHelp() {
     + (installEvt ? '<p><button class="btn primary" data-act="install">Jetzt installieren</button></p>' : '') + '<div class="cols">' + (isIos ? ios + and : and + ios) + '</div></section>';
 }
 
+/* Offene, noch nicht übernommene SOS-Meldungen für alle, die sie übernehmen dürfen */
+function sosAlarm(m) { return ME && canHandle(m || model()) ? DB.sos.filter(x => x.status === 'open').sort((a, b) => b.at - a.at) : []; }
+/* Neue Meldung seit dem letzten Blick: kurz vibrieren und piepen, Zahl am App-Symbol und im Fenstertitel */
+let sosSeen = null;
+function sosNotify() { if (!ME) return; const al = sosAlarm(), ids = al.map(x => x.id);
+  if (sosSeen === null) { try { sosSeen = new Set(JSON.parse(localStorage.getItem('sz-sos-seen') || '[]')); } catch (e) { sosSeen = new Set(); } }
+  const fresh = al.filter(x => !sosSeen.has(x.id) && x.by !== myName());
+  if (fresh.length) { try { navigator.vibrate && navigator.vibrate([250, 120, 250]); } catch (e) {} beep(); toast('SOS: ' + fresh[0].need + ' für ' + fresh[0].stName); }
+  sosSeen = new Set(ids); try { localStorage.setItem('sz-sos-seen', JSON.stringify(ids)); } catch (e) {}
+  document.title = (al.length ? '(' + al.length + ') ' : '') + 'Sternenzauber Helferplan';
+  try { if (navigator.setAppBadge) al.length ? navigator.setAppBadge(al.length) : navigator.clearAppBadge(); } catch (e) {} }
+let audioCtx = null;
+function beep() { try { audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)(); const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+  o.type = 'sine'; o.frequency.value = 880; g.gain.setValueAtTime(0.0001, audioCtx.currentTime); g.gain.exponentialRampToValueAtTime(0.25, audioCtx.currentTime + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.6);
+  o.connect(g); g.connect(audioCtx.destination); o.start(); o.stop(audioCtx.currentTime + 0.65); } catch (e) {} }
 function render() {
   const m = model(); drawFrame(m);
   const act = document.activeElement, fid = act && view.contains(act) ? act.id : '', pos = fid && 'selectionStart' in act ? act.selectionStart : null;
@@ -514,6 +529,8 @@ function render() {
     else if (S.tab === 'helfer') h = vHelfer(m);
     else if (!m.shifts.length || !m.stations.length) h = '<div class="empty"><h2>Noch kein Plan angelegt</h2><p class="muted">' + (isOrga() ? 'Lege unter «Einrichten» den ersten Stand und die erste Schicht an.' : 'Die Orga richtet den Plan gerade ein. Schau später noch einmal vorbei.') + '</p></div>';
     else h = S.tab === 'offen' ? vOffen(m) : S.tab === 'meine' ? vMeine(m) : vPlan(m); }
+  if (ME) { const al = sosAlarm(m); if (al.length && S.tab !== 'sos') { const x = al[0], min = Math.max(0, Math.round((Date.now() - (x.at || Date.now())) / 60000));
+      h = '<div class="sosbanner" role="alert"><span class="sb-dot" aria-hidden="true"></span><span class="sb-txt"><b>SOS' + (al.length > 1 ? ' · ' + al.length + ' offen' : '') + ':</b> ' + esc(x.need) + ' für ' + esc(x.stName) + ' <small>· ' + (x.by ? 'von ' + esc(x.by) + ' · ' : '') + (min ? 'vor ' + min + ' Min.' : 'gerade eben') + '</small></span><button class="btn sosgo" data-act="gotab" data-v="sos">Ansehen</button></div>' + h; } }
   view.innerHTML = '<div style="display:flex;flex-direction:column;gap:18px">' + h + homeHelp() + '<p class="made"><small>Version ' + VERSION + '</small></p></div>';
   if (fid) { const el = document.getElementById(fid); if (el) { el.focus(); if (pos != null) try { el.setSelectionRange(pos, pos); } catch (e) {} } }
 }
@@ -833,6 +850,7 @@ view.addEventListener('click', e => {
   const cal = e.target.closest('[data-cal]'); if (cal) { const [s, t] = cal.dataset.cal.split('|'), mm = model(), sh = mm.shifts.find(x => x.id === s), st = mm.stations.find(x => x.id === t); if (sh && st) showIcs([{ sh, st }]); return; }
   const b = e.target.closest('[data-act]'); if (!b) return; const a = b.dataset.act, v = b.dataset.v, m = model();
   if (a === 'claim') finishReg(v);
+  else if (a === 'gotab') { S.tab = v; render(); window.scrollTo(0, 0); }
   else if (a === 'pick') {
     view.querySelectorAll('[data-act=pick]').forEach(x => { x.disabled = true; });
     api('register', { pick: v }).then(r => signIn(r, 'Willkommen, ' + v), e => { if (netFail(e)) return; render(); gerr(e.status ? 'Das hat nicht geklappt. Bitte melde dich bei der Orga.' : NET); }); }
@@ -898,7 +916,7 @@ window.addEventListener('storage', e => {
   else if (!REMOTE && e.key === 'sz.vorschau.server') pull(); });
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') pull(); });
 window.addEventListener('online', () => pull());
-setInterval(() => { if (document.visibilityState === 'visible') pull(); }, 30000);
+setInterval(() => { if (document.visibilityState === 'visible') pull(); }, 20000);
 render();
 pull();
 })();
