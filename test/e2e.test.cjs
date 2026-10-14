@@ -103,7 +103,7 @@ let fails = 0, n = 0; const ok = (c, l) => { n++; console.log((c ? 'ok      ' : 
 
   // SOS: alle dürfen melden, benannte Personen und Orga sehen und übernehmen
   const C = await phone(); await C.fill('#g-code', CODE); await C.click('#f-code [type=submit]'); await C.waitForSelector('#g-first'); await reg(C, 'Saskia', 'Melis', '0160 4445556', 'saskia@beispiel.de');
-  await B.click('[data-tab=sos]'); ok((await B.$eval('#view', e => e.innerText)).includes('Nina Blasberg, Julian Richter, Magnus, Melli Schitteck, Frank Blasberg, Betsy Arens, Saskia Melis'), 'Helfer sehen, an wen die SOS-Meldung geht');
+  await B.click('[data-tab=sos]'); ok(!(await B.$eval('#view', e => e.innerText)).includes('Die Meldung geht an') && !!(await B.$('.sosbig')), 'SOS-Bereich zeigt nur noch den SOS-Knopf ohne Empfängertext');
   await B.click('[data-act=sos-new]'); await B.click('#dlg [data-d=sos-st]'); await B.click('#dlg [data-d=sos-need]'); await B.click('#dform [type=submit]'); await B.waitForTimeout(600); await B.click('[data-d=cancel]');
   ok(!(await B.$('[data-act=sos-go]')), 'eine normale Helferin kann melden, aber nicht übernehmen');
   ok(!!(await B.$('[data-act=sos-done]')), 'wer gemeldet hat, kann die eigene Meldung als erledigt markieren');

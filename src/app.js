@@ -417,8 +417,7 @@ function vSos(m) {
   const handle = canHandle(m), named = sosNames(), rec = DB.helpers.filter(h => h.sos && !sosNamed(h)).length + named.length, team = sosTeam(m).size;
   let h = '<section class="sosbox"><div class="beacon" aria-hidden="true"><i></i></div><div class="beacon-base" aria-hidden="true"></div>'
     + '<button class="sosbig" type="button" data-act="sos-new"><b>SOS</b><span>Hier drücken, wenn ein Stand etwas braucht</span></button>'
-    + '<p class="muted">Zwei Fingertipps genügen: Stand wählen, Bedarf wählen, senden.</p>'
-    + '<p class="muted">Die Meldung geht an die Springer-Teams, die Orga' + (named.length ? ' und an ' + esc(named.join(', ')) : '') + '.</p></section>';
+    + '</section>';
   const items = DB.sos.filter(x => handle || x.by === myName()).sort((a, b) => (a.status === 'done') - (b.status === 'done') || b.at - a.at);
   h += '<section class="sect"><h2>' + (handle ? 'SOS-Meldungen' : 'Deine Meldungen') + '</h2><p class="muted">'
     + (isOrga() ? 'Meldungen sehen und übernehmen: die Orga, alle ' + team + ' Personen aus den Springer-Teams und ' + (rec ? rec + ' zusätzlich benannte' : 'zusätzlich benannte') + ' SOS-Empfänger. Welche Teams dazugehören, stellst du unter «Einrichten» beim Stand ein, die benannten Personen ebenfalls unter «Einrichten».'
