@@ -159,7 +159,7 @@ function who_is($db, string $secret, array $tok): array { $orga = ($tok['r'] ?? 
   return ['role' => $orga ? 'orga' : 'helper', 'id' => $tok['h'], 'reg' => find_helper($db, $tok['h']) !== null]; }
 /* Was jemand zu sehen bekommt. Handynummern und E-Mails anderer sieht nur die Orga. */
 function view($db, array $me) {
-  if ($me['role'] === 'orga') { $o = clone $db; unset($o->bak); return $o; }
+  if ($me['role'] === 'orga') { $o = clone $db; unset($o->bak, $o->imp); $o->push = push_hids(); return $o; }
   $o = new stdClass; $o->rev = (int)($db->rev ?? 0); $o->active = $db->active; $o->years = new stdClass; $o->years->{(string)$db->active} = year_of($db);
   $o->sos = $db->sos; $o->codes = new stdClass; $o->helpers = [];
   foreach ($db->helpers as $h) { if (($h->id ?? '') === $me['id'] || ($h->by ?? '') === $me['id']) { $o->helpers[] = $h; continue; }
@@ -285,6 +285,74 @@ function orga_op($db, $op): string { $p = $op->p;
     if ($ok && is_object($c) && isset($c->by) && is_object($c->by)) { $ppl = people_of($c); foreach (array_keys(get_object_vars($c->by)) as $n) if (!in_array((string)$n, $ppl, true)) unset($c->by->{$n}); if (!get_object_vars($c->by)) unset($c->by); } }
   return ''; }
 
+/* ---------- Mitteilungen aufs Handy (Web Push, ohne Fremddienst) ----------
+   Die App meldet ein Handy an (push-sub). Bei einer neuen SOS-Meldung verschickt der Server eine
+   verschlüsselte Mitteilung an alle angemeldeten Handys der SOS-Leute (Orga, Springer, SOS-Empfänger). */
+function b64u_dec(string $s): string { $r = base64_decode(strtr($s, '-_', '+/') . str_repeat('=', (4 - strlen($s) % 4) % 4), true); return $r === false ? '' : $r; }
+function ec_new() { $k = openssl_pkey_new(['curve_name' => 'prime256v1', 'private_key_type' => OPENSSL_KEYTYPE_EC]); if (!$k) throw new Halt(500, 'crypto'); return $k; }
+function ec_raw_pub($k): string { $d = openssl_pkey_get_details($k); return "\x04" . str_pad($d['ec']['x'], 32, "\0", STR_PAD_LEFT) . str_pad($d['ec']['y'], 32, "\0", STR_PAD_LEFT); }
+function ec_pub_from_raw(string $raw) { $der = hex2bin('3059301306072a8648ce3d020106082a8648ce3d030107034200') . $raw;
+  return openssl_pkey_get_public("-----BEGIN PUBLIC KEY-----\n" . chunk_split(base64_encode($der), 64, "\n") . "-----END PUBLIC KEY-----\n"); }
+function vapid(): array { $v = read_data('vapid'); if (is_object($v) && !empty($v->pem) && !empty($v->pub)) return ['pem' => $v->pem, 'pub' => $v->pub];
+  $free = lock(); try { $v = read_data('vapid'); if (is_object($v) && !empty($v->pem)) return ['pem' => $v->pem, 'pub' => $v->pub];
+    $k = ec_new(); openssl_pkey_export($k, $pem); $n = ['pem' => $pem, 'pub' => b64u(ec_raw_pub($k))]; write_data('vapid', $n); return $n; } finally { $free(); } }
+function der_to_raw(string $der): string { $i = 2; if (ord($der[1]) & 0x80) $i += ord($der[1]) & 0x7f; $out = '';
+  for ($n = 0; $n < 2; $n++) { $len = ord($der[$i + 1]); $v = ltrim(substr($der, $i + 2, $len), "\0"); $out .= str_pad($v, 32, "\0", STR_PAD_LEFT); $i += 2 + $len; } return $out; }
+function vapid_header(string $endpoint): string { $v = vapid(); $u = parse_url($endpoint); $aud = $u['scheme'] . '://' . $u['host'] . (isset($u['port']) ? ':' . $u['port'] : '');
+  $host = preg_replace('/[^a-z0-9.\-]/i', '', (string)($_SERVER['HTTP_HOST'] ?? 'localhost'));
+  $data = b64u('{"typ":"JWT","alg":"ES256"}') . '.' . b64u(json_encode(['aud' => $aud, 'exp' => time() + 12 * 3600, 'sub' => 'https://' . $host]));
+  if (!openssl_sign($data, $sig, $v['pem'], OPENSSL_ALGO_SHA256)) throw new Halt(500, 'crypto');
+  return 'vapid t=' . $data . '.' . b64u(der_to_raw($sig)) . ', k=' . $v['pub']; }
+/* Verschlüsselung nach RFC 8291 (aes128gcm) */
+function push_encrypt(string $payload, string $uaPub, string $auth): string {
+  $eph = ec_new(); $asPub = ec_raw_pub($eph); $peer = ec_pub_from_raw($uaPub); if (!$peer) throw new Halt(400, 'key');
+  $ecdh = openssl_pkey_derive($peer, $eph, 32); if ($ecdh === false) throw new Halt(400, 'key');
+  $ikm = hash_hkdf('sha256', $ecdh, 32, "WebPush: info\0" . $uaPub . $asPub, $auth); $salt = random_bytes(16);
+  $cek = hash_hkdf('sha256', $ikm, 16, "Content-Encoding: aes128gcm\0", $salt); $nonce = hash_hkdf('sha256', $ikm, 12, "Content-Encoding: nonce\0", $salt);
+  $ct = openssl_encrypt($payload . "\x02", 'aes-128-gcm', $cek, OPENSSL_RAW_DATA, $nonce, $tag);
+  return $salt . pack('N', 4096) . chr(65) . $asPub . $ct . $tag; }
+function push_ok_endpoint(string $e): bool { $u = parse_url($e); if (!$u || empty($u['host'])) return false; $h = strtolower($u['host']);
+  if (getenv('SZ_TEST') && ($h === '127.0.0.1' || $h === 'localhost')) return true;
+  if (($u['scheme'] ?? '') !== 'https') return false;
+  foreach (['fcm.googleapis.com', 'push.services.mozilla.com', 'push.apple.com', 'notify.windows.com', 'push.microsoft.com'] as $ok) if ($h === $ok || str_ends_with($h, '.' . $ok)) return true;
+  return false; }
+function push_subs(): array { $l = read_data('push'); return is_array($l) ? $l : []; }
+function push_hids(): array { return array_values(array_unique(array_map(fn($s) => (string)($s->hid ?? ''), push_subs()))); }
+/* Mitteilungen verschicken. Abgelaufene Anmeldungen (404/410) werden entfernt. */
+function push_send(array $subs, array $msg): array { if (!$subs || !function_exists('curl_multi_init')) return [];
+  $payload = json_encode($msg, SZ_JSON); $mh = curl_multi_init(); $hs = [];
+  foreach ($subs as $i => $s) { try { $body = push_encrypt($payload, b64u_dec((string)$s->k), b64u_dec((string)$s->a));
+      $ch = curl_init((string)$s->ep); curl_setopt_array($ch, [CURLOPT_POST => true, CURLOPT_POSTFIELDS => $body, CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 10,
+        CURLOPT_HTTPHEADER => ['Content-Type: application/octet-stream', 'Content-Encoding: aes128gcm', 'TTL: 3600', 'Urgency: high', 'Topic: sos', 'Authorization: ' . vapid_header((string)$s->ep)]]);
+      curl_multi_add_handle($mh, $ch); $hs[$i] = $ch; } catch (Throwable $e) {} }
+  do { $st = curl_multi_exec($mh, $run); if ($run) curl_multi_select($mh, 1.0); } while ($run && $st === CURLM_OK);
+  $codes = []; $gone = [];
+  foreach ($hs as $i => $ch) { $c = (int)curl_getinfo($ch, CURLINFO_RESPONSE_CODE); $codes[] = $c; if ($c === 404 || $c === 410) $gone[] = (string)$subs[$i]->ep; curl_multi_remove_handle($mh, $ch); curl_close($ch); }
+  curl_multi_close($mh);
+  if ($gone) { $free = lock(); try { write_data('push', array_values(array_filter(push_subs(), fn($s) => !in_array((string)$s->ep, $gone, true)))); } finally { $free(); } }
+  return $codes; }
+/* Wer darf SOS übernehmen? Orga, als SOS-Empfänger markiert oder benannt, oder im Plan bei einem Springer-Stand */
+function is_sos_station($st): bool { return isset($st->sos) ? !empty($st->sos) : (bool)preg_match('/springer/i', (string)($st->name ?? '')); }
+function sos_team($db): array { $y = year_of($db); $ids = []; foreach (($y->stations ?? []) as $st) if (is_object($st) && is_sos_station($st)) $ids[] = (string)$st->id;
+  $out = []; foreach (($y->shifts ?? []) as $sh) foreach ($ids as $id) foreach (people_of($sh->cells->{$id} ?? null) as $n) $out[nkey($n)] = true; return $out; }
+function nsp(string $s): string { return preg_replace('/\s+/u', ' ', nkey($s)); }
+function sos_match($h, string $entry): bool { $k = nsp($entry); $nm = nsp((string)($h->name ?? '')); $full = nsp(($h->first ?? '') . ' ' . ($h->last ?? ''));
+  if ($k === '') return false; if ($k === $nm || $k === $full) return true; $w = explode(' ', $k);
+  $f1 = explode(' ', nkey($h->first ?? '') !== '' ? nkey($h->first) : $nm)[0]; if (count($w) === 1) return $w[0] === $f1;
+  $hl = nkey($h->last ?? '') !== '' ? nkey($h->last) : implode(' ', array_slice(explode(' ', $nm), 1)); $ini = str_replace('.', '', $hl);
+  return empty($h->last) && $w[0] === $f1 && mb_strlen($ini) === 1 && mb_substr(end($w), 0, 1) === $ini; }
+function sos_recipients($db, string $reporter): array { $y = year_of($db); $named = is_array($y->info->sosNames ?? null) ? $y->info->sosNames : []; $team = sos_team($db); $out = [];
+  foreach (push_subs() as $s) { $h = find_helper($db, (string)($s->hid ?? '')); if ($h && nkey($h->name ?? '') === nkey($reporter) && empty($s->o)) continue;
+    $ok = !empty($s->o) || ($h && (!empty($h->sos) || ($h->role ?? '') === 'orga' || isset($team[nkey($h->name ?? '')])));
+    if (!$ok && $h) foreach ($named as $n) if (is_string($n) && sos_match($h, $n)) { $ok = true; break; }
+    if ($ok) $out[] = $s; }
+  return $out; }
+/* Antwort sofort schicken, danach in Ruhe weiterarbeiten (Mitteilungen verschicken) */
+function reply_then(int $status, $body, callable $after): void { ignore_user_abort(true); http_response_code($status); $j = json_encode($body, SZ_JSON);
+  header('Content-Length: ' . strlen($j)); header('Connection: close'); echo $j;
+  if (function_exists('fastcgi_finish_request')) fastcgi_finish_request(); elseif (function_exists('litespeed_finish_request')) litespeed_finish_request(); else { @ob_end_flush(); flush(); }
+  try { $after(); } catch (Throwable $e) { error_log('Sternenzauber Push: ' . $e->getMessage()); } exit; }
+
 /* ---------- Die Anfragen ---------- */
 try {
   $route = $_SERVER['REQUEST_METHOD'] . ' ' . preg_replace('/[^a-z]/', '', (string)($_GET['r'] ?? ''));
@@ -297,6 +365,7 @@ try {
     if ($raw !== '') { $b = json_decode($raw); if (!is_object($b)) out(400, ['error' => 'bad']); } }
   $secret = secret(); $wait = getenv('SZ_TEST') ? 0 : 600000;
 
+  if ($route === 'GET pushkey') out(200, ['key' => vapid()['pub']]);
   if ($route === 'POST login') { $db = load();
     if (isset($b->code) && is_string($b->code)) {
       if (trim($b->code) === '' || nkey($b->code) !== nkey($db->codes->helper)) { usleep($wait); out(401, ['error' => 'code']); }
@@ -369,17 +438,36 @@ try {
     /* Personen zuerst anlegen, dann eintragen: die Reihenfolge der Schritte aus der App ist nicht festgelegt */
     $is_h = fn($x) => is_object($x) && isset($x->p) && is_array($x->p) && ($x->p[0] ?? '') === 'helpers';
     $ops = array_merge(array_values(array_filter($b->ops, $is_h)), array_values(array_filter($b->ops, fn($x) => !$is_h($x))));
-    [$db, $o] = mutate(function ($db) use ($secret, $tok, $ops) { $me = who_is($db, $secret, $tok); $rej = []; $n = 0; $pw = false;
+    [$db, $o] = mutate(function ($db) use ($secret, $tok, $ops) { $me = who_is($db, $secret, $tok); $rej = []; $n = 0; $pw = false; $ids0 = array_map(fn($x) => (string)($x->id ?? ''), $db->sos);
       if ($me['role'] !== 'orga' && !$me['reg']) return ['write' => false, 'err' => [403, 'reg']];
       foreach ($ops as $op) { if (!valid_op($op)) { $rej[] = 'bad'; continue; }
         $why = $me['role'] === 'orga' ? orga_op($db, $op) : helper_op($db, $me, $op);
         if ($why === 'pw') { $pw = true; $n++; } elseif ($why !== '') $rej[] = $why; else $n++; }
-      return $n ? ['rejected' => $rej, 'pw' => $pw] : ['write' => false, 'rejected' => $rej]; });
+      $neu = array_values(array_filter($db->sos, fn($x) => !in_array((string)($x->id ?? ''), $ids0, true)));
+      return $n ? ['rejected' => $rej, 'pw' => $pw, 'neu' => $neu] : ['write' => false, 'rejected' => $rej]; });
     if (isset($o['err'])) out($o['err'][0], ['error' => $o['err'][1]]);
     $nt = $tok; $res = [];
     if (!empty($o['pw'])) { $nt = ['r' => 'o', 'h' => $tok['h'], 'k' => pw_tag($secret, (string)$db->codes->orga), 't' => time()]; $res['token'] = sign($secret, $nt); }
     $me = who_is($db, $secret, $nt);
-    out(200, ['db' => view($db, $me), 'rev' => (int)($db->rev ?? 0), 'me' => $me, 'rejected' => $o['rejected'] ?? []] + $res); }
+    $body = ['db' => view($db, $me), 'rev' => (int)($db->rev ?? 0), 'me' => $me, 'rejected' => $o['rejected'] ?? []] + $res;
+    if (!empty($o['neu'])) reply_then(200, $body, function () use ($db, $o) { foreach ($o['neu'] as $x) push_send(sos_recipients($db, (string)($x->by ?? '')),
+      ['title' => 'SOS: ' . ($x->need ?? 'Hilfe'), 'body' => 'für ' . ($x->stName ?? '') . (!empty($x->by) ? ' · von ' . $x->by : '') . (!empty($x->note) ? ' · ' . $x->note : ''), 'tag' => 'sos-' . $x->id, 'url' => './?tab=sos']); });
+    out(200, $body); }
+
+  /* Mitteilungen: Schlüssel holen, Handy an- und abmelden, Probe an sich selbst */
+  if ($route === 'POST pushsub' || $route === 'POST pushunsub' || $route === 'POST pushtest') {
+    $db = load(); $me = who_is($db, $secret, $tok); if ($me['role'] !== 'orga' && !$me['reg']) out(403, ['error' => 'reg']);
+    if ($route === 'POST pushtest') { $mine = array_values(array_filter(push_subs(), fn($s) => ($s->hid ?? '') === $me['id']));
+      if (!$mine) out(404, ['error' => 'nosub']);
+      $codes = push_send($mine, ['title' => 'Sternenzauber: Probe', 'body' => 'So sieht eine SOS-Mitteilung aus. Es funktioniert.', 'tag' => 'probe', 'url' => './?tab=sos']);
+      out(200, ['sent' => count(array_filter($codes, fn($c) => $c >= 200 && $c < 300)), 'codes' => $codes]); }
+    $ep = str($b->endpoint ?? '', 1000);
+    $free = lock(); try { $l = array_values(array_filter(push_subs(), fn($s) => ($s->ep ?? '') !== $ep));
+      if ($route === 'POST pushsub') { $k = str($b->keys->p256dh ?? '', 200); $a = str($b->keys->auth ?? '', 100);
+        if (!push_ok_endpoint($ep) || strlen(b64u_dec($k)) !== 65 || strlen(b64u_dec($a)) < 16) out(400, ['error' => 'sub']);
+        $n = new stdClass; $n->hid = $me['id']; $n->ep = $ep; $n->k = $k; $n->a = $a; $n->o = $me['role'] === 'orga'; $n->at = time(); $l[] = $n; $l = array_slice($l, -500); }
+      write_data('push', $l); } finally { $free(); }
+    out(200, ['ok' => true]); }
 
   out(404, ['error' => 'route']);
 } catch (Halt $e) { out($e->status, ['error' => $e->err]);

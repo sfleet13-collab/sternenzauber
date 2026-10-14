@@ -293,3 +293,10 @@ a.btn.primary { color: var(--brand-fg) }
 .sb-dot { width: 12px; height: 12px; border-radius: 50%; background: #FFFFFF; flex: none; animation: sbpulse 1.2s ease-in-out infinite }
 @keyframes sbpulse { 0%, 100% { opacity: 1; transform: scale(1) } 50% { opacity: .35; transform: scale(.7) } }
 @media (prefers-reduced-motion: reduce) { .sb-dot { animation: none } }
+
+.pushbox { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; background: var(--surface); border: 1px solid var(--line); border-left: 4px solid var(--sos); border-radius: 14px; padding: 14px 16px }
+.pushbox.on { border-left-color: #1E6B3E }
+.pushbox p { flex: 1 1 220px; margin: 0; line-height: 1.4 }
+.pushbox .pb-bell { font-size: 22px; flex: none }
+.pushbox .row { gap: 8px; flex-wrap: wrap }
+.pill.ok { background: #DDF1E4; color: #1E6B3E }

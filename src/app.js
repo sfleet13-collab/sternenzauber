@@ -33,7 +33,7 @@ function cache() { try { if (ME) localStorage.setItem(LS, JSON.stringify(BASE));
 try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {}); } catch (e) {}
 let ME = loadMe();
 let DB = (ME && loadCache()) || empty(), BASE = clone(DB);
-const S = { tab: 'plan', day: null, shift: null, group: 'all', q: '', openPerson: null, gate: 'start', prog: null, pendingRole: null, tok: null, year: null };
+const S = { tab: /[?&]tab=sos\b/.test(location.search) ? 'sos' : 'plan', day: null, shift: null, group: 'all', q: '', openPerson: null, gate: 'start', prog: null, pendingRole: null, tok: null, year: null };
 let D = null, toastTimer = 0, busy = false, again = false;
 const YR = () => (S.year && DB.years[S.year] ? S.year : DB.active);
 const Y = () => DB.years[YR()];
@@ -241,7 +241,7 @@ function vGate() {
 const gval = id => { const e = document.getElementById(id); return e ? e.value.trim() : ''; };
 function gerr(msg) { const e = $('#g-err'); if (e) { e.textContent = msg; e.hidden = false; } }
 function enter(msg) { S.tab = 'plan'; S.gate = 'start'; S.prog = null; render(); toast(msg); window.scrollTo(0, 0); }
-function signIn(r, msg) { take(r); setMe({ role: r.me.role, id: r.me.id, token: r.token }); S.tok = null; S.pendingRole = null; S.pending = null; cache(); enter(r.me.role === 'orga' ? msg + '. Du bist als Orga angemeldet.' : msg); }
+function signIn(r, msg) { setTimeout(pushCheck, 300); take(r); setMe({ role: r.me.role, id: r.me.id, token: r.token }); S.tok = null; S.pendingRole = null; S.pending = null; cache(); enter(r.me.role === 'orga' ? msg + '. Du bist als Orga angemeldet.' : msg); }
 const regErr = e => e.code === 'taken' ? 'Dieser Name ist schon mit einer Handynummer angemeldet. Bitte melde dich bei der Orga.' : e.code === 'phone' ? 'Diese Handynummer ist schon für eine andere Person hinterlegt. Bitte melde dich bei der Orga.' : e.status ? 'Das hat nicht geklappt. Bitte prüfe deine Angaben.' : NET;
 function dnFor(first, last) { const short = first + ' ' + last.charAt(0).toUpperCase() + '.', taken = new Set(DB.helpers.map(h => key(h.name)));
   model().people.forEach((v, k) => taken.add(k)); return taken.has(key(short)) ? first + ' ' + last : short; }
@@ -417,16 +417,16 @@ function vSos(m) {
   const handle = canHandle(m), named = sosNames(), rec = DB.helpers.filter(h => h.sos && !sosNamed(h)).length + named.length, team = sosTeam(m).size;
   let h = '<section class="sosbox"><div class="beacon" aria-hidden="true"><i></i></div><div class="beacon-base" aria-hidden="true"></div>'
     + '<button class="sosbig" type="button" data-act="sos-new"><b>SOS</b><span>Hier drücken, wenn ein Stand etwas braucht</span></button>'
-    + '</section>';
+    + '</section>' + (handle ? pushBox(false) : '');
   const items = DB.sos.filter(x => handle || x.by === myName()).sort((a, b) => (a.status === 'done') - (b.status === 'done') || b.at - a.at);
   h += '<section class="sect"><h2>' + (handle ? 'SOS-Meldungen' : 'Deine Meldungen') + '</h2><p class="muted">'
     + (isOrga() ? 'Meldungen sehen und übernehmen: die Orga, alle ' + team + ' Personen aus den Springer-Teams und ' + (rec ? rec + ' zusätzlich benannte' : 'zusätzlich benannte') + ' SOS-Empfänger. Welche Teams dazugehören, stellst du unter «Einrichten» beim Stand ein, die benannten Personen ebenfalls unter «Einrichten».'
       : handle ? 'Du gehörst zum SOS-Team. Übernimm eine Meldung, damit alle sehen, dass du unterwegs bist.' : 'Hier siehst du, ob schon jemand für dich unterwegs ist.') + '</p>';
-  if (!items.length) return h + '<div class="empty"><p class="muted">' + (handle ? 'Im Moment gibt es keine SOS-Meldung.' : 'Du hast noch nichts gemeldet.') + '</p></div></section>';
+  if (!items.length) return h + '<div class="empty"><p class="muted">' + (handle ? 'Im Moment gibt es keine SOS-Meldung.' : 'Du hast noch nichts gemeldet.') + '</p></div></section>' + sosTeamBox(m);
   return h + '<ul class="list">' + items.map(x => { const st = x.status;
     const sub = [clock(x.at) + ' Uhr', 'von ' + x.by, x.note, st !== 'open' && x.taker ? (st === 'go' ? 'unterwegs: ' : 'erledigt von ') + x.taker : ''].filter(Boolean).join(' · ');
     return '<li><div class="item' + (st === 'done' ? ' faded' : '') + '"><span class="main"><b>' + esc(x.need) + '</b> für ' + esc(x.stName) + '<small>' + esc(sub) + '</small></span><span class="pill ' + (st === 'open' ? 'open' : st === 'go' ? 'part' : 'plain') + '">' + (st === 'open' ? 'offen' : st === 'go' ? 'unterwegs' : 'erledigt') + '</span>'
-      + (!handle ? (st !== 'done' && x.by === myName() ? '<button class="btn" data-act="sos-done" data-v="' + x.id + '">Hat sich erledigt</button>' : '') : st === 'open' ? '<button class="btn primary" data-act="sos-go" data-v="' + x.id + '">Ich übernehme</button>' : st === 'go' ? '<button class="btn primary" data-act="sos-done" data-v="' + x.id + '">Erledigt</button>' : isOrga() ? '<button class="btn quiet" data-act="sos-del" data-v="' + x.id + '">Entfernen</button>' : '') + '</div></li>'; }).join('') + '</ul></section>';
+      + (!handle ? (st !== 'done' && x.by === myName() ? '<button class="btn" data-act="sos-done" data-v="' + x.id + '">Hat sich erledigt</button>' : '') : st === 'open' ? '<button class="btn primary" data-act="sos-go" data-v="' + x.id + '">Ich übernehme</button>' : st === 'go' ? '<button class="btn primary" data-act="sos-done" data-v="' + x.id + '">Erledigt</button>' : isOrga() ? '<button class="btn quiet" data-act="sos-del" data-v="' + x.id + '">Entfernen</button>' : '') + '</div></li>'; }).join('') + '</ul></section>' + sosTeamBox(m);
 }
 
 function vEinrichten(m) {
@@ -502,6 +502,53 @@ function homeHelp() {
     + (installEvt ? '<p><button class="btn primary" data-act="install">Jetzt installieren</button></p>' : '') + '<div class="cols">' + (isIos ? ios + and : and + ios) + '</div></section>';
 }
 
+/* ---------- Mitteilungen aufs Handy (nur auf dem eigenen Webhosting mit api.php) ---------- */
+const PUSH = REMOTE && API === 'php';
+const pushCan = () => PUSH && 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+const isInstalled = () => window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+const iosBrowser = () => /iphone|ipad|ipod/i.test(navigator.userAgent) && !isInstalled();
+const keyBytes = k => { const b = atob(k.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((k.length + 3) % 4)); return Uint8Array.from(b, c => c.charCodeAt(0)); };
+if (PUSH && 'serviceWorker' in navigator) { navigator.serviceWorker.register('sw.js').catch(() => {});
+  navigator.serviceWorker.addEventListener('message', e => { if (e.data && e.data.tab === 'sos' && ME) { S.tab = 'sos'; render(); pull(); } }); }
+/* Ist dieses Handy angemeldet? Bei Bedarf beim Server erneut hinterlegen (z. B. nach neuer Anmeldung). */
+function pushCheck() { if (!pushCan() || !ME) return;
+  navigator.serviceWorker.ready.then(r => r.pushManager.getSubscription()).then(sub => { const on = !!sub && Notification.permission === 'granted';
+    if (on) api('push-sub', sub.toJSON()).catch(() => {});
+    if (S.pushOn !== on) { S.pushOn = on; render(); } }).catch(() => {}); }
+async function pushOn() {
+  try { const perm = await Notification.requestPermission(); if (perm !== 'granted') { S.pushOn = false; render(); return toast('Mitteilungen sind nicht erlaubt. Du kannst sie in den Handy-Einstellungen erlauben.'); }
+    const key = (await api('push-key')).key, reg = await navigator.serviceWorker.ready;
+    let sub = await reg.pushManager.getSubscription(); if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: keyBytes(key) });
+    await api('push-sub', sub.toJSON()); S.pushOn = true; render(); toast('Mitteilungen sind an. Tipp auf «Probe senden» zum Testen.');
+  } catch (e) { toast('Das hat nicht geklappt. Bitte später noch einmal versuchen.'); } }
+async function pushOff() { try { const reg = await navigator.serviceWorker.ready, sub = await reg.pushManager.getSubscription();
+    if (sub) { await api('push-unsub', { endpoint: sub.endpoint }).catch(() => {}); await sub.unsubscribe(); } } catch (e) {}
+  S.pushOn = false; render(); toast('Mitteilungen sind aus'); }
+/* Kasten im SOS-Bereich und Hinweis im Plan */
+function pushBox(compact) { if (!PUSH) return '';
+  let t, btn = '';
+  if (iosBrowser()) t = 'Damit dein Handy bei SOS piept: Leg die App zuerst auf den Home-Bildschirm (Anleitung ganz unten), öffne sie dort und schalte dann hier die Mitteilungen ein.';
+  else if (!pushCan()) t = 'Dieser Browser kann keine Mitteilungen anzeigen. Nutze auf dem iPhone Safari, auf Android Chrome.';
+  else if (Notification.permission === 'denied') t = 'Mitteilungen sind auf diesem Handy blockiert. Erlaube sie in den Handy-Einstellungen bei «Sternenzauber».';
+  else if (S.pushOn) { t = '<b>Mitteilungen sind an.</b> Bei einer neuen SOS-Meldung piept dein Handy, auch wenn die App zu ist.'; btn = '<button class="btn" data-act="push-test">Probe senden</button><button class="btn quiet" data-act="push-off">Ausschalten</button>'; }
+  else { t = '<b>Mitteilungen einschalten</b>, damit dein Handy bei SOS piept, auch wenn die App zu ist.'; btn = '<button class="btn primary" data-act="push-on">Mitteilungen einschalten</button>' + (compact ? '<button class="btn quiet" data-act="push-later">Später</button>' : ''); }
+  return '<section class="pushbox' + (S.pushOn ? ' on' : '') + '"><span class="pb-bell" aria-hidden="true">' + (S.pushOn ? '🔔' : '🔕') + '</span><p>' + t + '</p>' + (btn ? '<div class="row">' + btn + '</div>' : '') + '</section>'; }
+function pushHint(m) { if (!PUSH || !ME || S.pushOn || !canHandle(m) || S.tab === 'sos') return '';
+  try { if (localStorage.getItem('sz-push-later') === '1') return ''; } catch (e) {}
+  if (!pushCan() && !iosBrowser()) return ''; return pushBox(true); }
+/* Für die Orga: Wer gehört zum SOS-Team, wer ist angemeldet, wer hat Mitteilungen an? */
+function sosTeamBox(m) { if (!isOrga()) return '';
+  const people = new Map(), add = (name, why) => { const k = key(name); if (!people.has(k)) people.set(k, { name, why: new Set() }); people.get(k).why.add(why); };
+  sosTeam(m).forEach(k => add((m.people.get(k) || {}).name || k, 'Springer'));
+  DB.helpers.forEach(h => { if (h.by) return; if (h.sos || sosNamed(h)) add(h.name, 'SOS-Empfänger'); if (h.role === 'orga') add(h.name, 'Orga'); });
+  sosNames().forEach(n => { if (!DB.helpers.some(h => !h.by && sosMatch(h, n))) add(n, 'SOS-Empfänger'); });
+  const push = new Set(Array.isArray(DB.push) ? DB.push : []);
+  const rows = [...people.values()].map(p => { const h = DB.helpers.find(x => !x.by && (key(x.name) === key(p.name) || sosMatch(x, p.name)));
+    return Object.assign(p, { st: !h ? 0 : push.has(h.id) ? 2 : 1 }); }).sort((a, b) => a.st - b.st || a.name.localeCompare(b.name, 'de'));
+  const lab = ['noch nicht angemeldet', 'angemeldet, Mitteilungen aus', 'Mitteilungen an'], cls = ['open', 'part', 'ok'];
+  const n2 = rows.filter(r => r.st === 2).length;
+  return '<section class="sect"><h2>SOS-Team</h2><p class="muted">' + n2 + ' von ' + rows.length + ' haben Mitteilungen eingeschaltet. Wer fehlt, bekommt kein Piepen aufs Handy.</p><ul class="list">'
+    + rows.map(r => '<li><div class="item"><span class="main"><b>' + esc(r.name) + '</b><small>' + esc([...r.why].join(' · ')) + '</small></span><span class="pill ' + cls[r.st] + '">' + lab[r.st] + '</span></div></li>').join('') + '</ul></section>'; }
 /* Offene, noch nicht übernommene SOS-Meldungen für alle, die sie übernehmen dürfen */
 function sosAlarm(m) { return ME && canHandle(m || model()) ? DB.sos.filter(x => x.status === 'open').sort((a, b) => b.at - a.at) : []; }
 /* Neue Meldung seit dem letzten Blick: kurz vibrieren und piepen, Zahl am App-Symbol und im Fenstertitel */
@@ -528,6 +575,7 @@ function render() {
     else if (S.tab === 'helfer') h = vHelfer(m);
     else if (!m.shifts.length || !m.stations.length) h = '<div class="empty"><h2>Noch kein Plan angelegt</h2><p class="muted">' + (isOrga() ? 'Lege unter «Einrichten» den ersten Stand und die erste Schicht an.' : 'Die Orga richtet den Plan gerade ein. Schau später noch einmal vorbei.') + '</p></div>';
     else h = S.tab === 'offen' ? vOffen(m) : S.tab === 'meine' ? vMeine(m) : vPlan(m); }
+  if (ME) h = pushHint(m) + h;
   if (ME) { const al = sosAlarm(m); if (al.length && S.tab !== 'sos') { const x = al[0], min = Math.max(0, Math.round((Date.now() - (x.at || Date.now())) / 60000));
       h = '<div class="sosbanner" role="alert"><span class="sb-dot" aria-hidden="true"></span><span class="sb-txt"><b>SOS' + (al.length > 1 ? ' · ' + al.length + ' offen' : '') + ':</b> ' + esc(x.need) + ' für ' + esc(x.stName) + ' <small>· ' + (x.by ? 'von ' + esc(x.by) + ' · ' : '') + (min ? 'vor ' + min + ' Min.' : 'gerade eben') + '</small></span><button class="btn sosgo" data-act="gotab" data-v="sos">Ansehen</button></div>' + h; } }
   view.innerHTML = '<div style="display:flex;flex-direction:column;gap:18px">' + h + homeHelp() + '<p class="made"><small>Version ' + VERSION + '</small></p></div>';
@@ -849,6 +897,10 @@ view.addEventListener('click', e => {
   const cal = e.target.closest('[data-cal]'); if (cal) { const [s, t] = cal.dataset.cal.split('|'), mm = model(), sh = mm.shifts.find(x => x.id === s), st = mm.stations.find(x => x.id === t); if (sh && st) showIcs([{ sh, st }]); return; }
   const b = e.target.closest('[data-act]'); if (!b) return; const a = b.dataset.act, v = b.dataset.v, m = model();
   if (a === 'claim') finishReg(v);
+  else if (a === 'push-on') pushOn();
+  else if (a === 'push-off') pushOff();
+  else if (a === 'push-later') { try { localStorage.setItem('sz-push-later', '1'); } catch (e) {} render(); }
+  else if (a === 'push-test') api('push-test', {}).then(r => toast(r.sent ? 'Probe gesendet. Gleich sollte dein Handy piepen.' : 'Die Probe kam nicht an. Schalte die Mitteilungen aus und wieder ein.'), () => toast('Die Probe kam nicht an. Schalte die Mitteilungen aus und wieder ein.'));
   else if (a === 'gotab') { S.tab = v; render(); window.scrollTo(0, 0); }
   else if (a === 'pick') {
     view.querySelectorAll('[data-act=pick]').forEach(x => { x.disabled = true; });
@@ -918,4 +970,5 @@ window.addEventListener('online', () => pull());
 setInterval(() => { if (document.visibilityState === 'visible') pull(); }, 20000);
 render();
 pull();
+pushCheck();
 })();

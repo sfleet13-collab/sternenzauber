@@ -109,10 +109,13 @@ let fails = 0, n = 0; const ok = (c, l) => { n++; console.log((c ? 'ok      ' : 
   ok(!!(await B.$('[data-act=sos-done]')), 'wer gemeldet hat, kann die eigene Meldung als erledigt markieren');
   await refresh(C); ok(await C.isVisible('.sosbanner') && (await C.$eval('.sosbanner', e => e.innerText)).includes('SOS') && (await C.$eval('.t-sos .n', e => e.innerText)) === '1', 'SOS-Empfängerin sieht Banner und roten Punkt');
   ok(!(await B.$('.sosbanner')), 'normale Helfer bekommen kein Banner');
+  ok(await C.isVisible('.pushbox [data-act=push-on]') && !(await B.$('.pushbox')), 'SOS-Leute sehen «Mitteilungen einschalten», normale Helfer nicht');
+  ok(await C.evaluate(async () => !!(await navigator.serviceWorker.getRegistration())), 'Hintergrund-Dienst für Mitteilungen ist angemeldet');
   await C.click('.sosbanner [data-act=gotab]'); ok((await C.$eval('[data-tab=sos]', e => e.getAttribute('aria-selected'))) === 'true', 'Banner führt zum SOS-Bereich');
   await C.click('[data-tab=sos]'); await refresh(C); ok(!!(await C.$('[data-act=sos-go]')) && (await C.$eval('#view', e => e.innerText)).includes('von Astrid K.'), 'benannte SOS-Empfängerin sieht die Meldung und kann übernehmen');
   await C.click('[data-act=sos-go]'); await C.waitForTimeout(600); await A.click('[data-tab=sos]'); await refresh(A);
-  ok((await A.$eval('#view', e => e.innerText)).includes('unterwegs: Saskia M.'), 'Orga sieht, wer unterwegs ist'); await B.click('[data-tab=plan]');
+  ok((await A.$eval('#view', e => e.innerText)).includes('unterwegs: Saskia M.'), 'Orga sieht, wer unterwegs ist');
+  { const tx = await A.$eval('#view', e => e.innerText); ok(tx.includes('SOS-Team') && /Saskia M\.[\s\S]*angemeldet, Mitteilungen aus/.test(tx) && tx.includes('noch nicht angemeldet') && tx.includes('Springer'), 'Orga sieht, wer im SOS-Team angemeldet ist und wer Mitteilungen an hat'); } await B.click('[data-tab=plan]');
   // Wer auf der eingelesenen Liste steht, ist mit Vorname und Handynummer sofort drin (ohne E-Mail)
   const L = await phone(); await L.fill('#g-code', CODE); await L.click('#f-code [type=submit]'); await L.waitForSelector('#g-first');
   await L.fill('#g-first', 'Lisa'); await L.fill('#g-last', 'Liste'); await L.fill('#g-phone', '0170 1231234'); await L.click('#f-reg [type=submit]');
