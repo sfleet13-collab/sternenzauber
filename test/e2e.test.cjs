@@ -138,6 +138,10 @@ let fails = 0, n = 0; const ok = (c, l) => { n++; console.log((c ? 'ok      ' : 
   fs.writeFileSync(path.join(OUT, hl.name), Buffer.from(hl.data)); ok(hl.head === '%PDF-' && hl.name === 'sternenzauber-helferliste.pdf', 'Helferliste als PDF: ' + Math.round(hl.data.length / 1024) + ' KB');
   await A.click('[data-d=cancel]'); await A.click('[data-tab=plan]');
   ok(!(await B.$('[data-act=pdf-helfer]')), 'Helfer haben keinen Knopf für die Helferliste');
+  // Orga löscht eine Person aus der Helferliste (zwei Tipps)
+  await A.click('[data-tab=helfer]'); await A.waitForTimeout(200); await A.click('[data-act=person][data-v="lisa l."]');
+  await A.click('[data-act=h-del]'); ok((await A.$eval('[data-act=h-del]', e => e.innerText)).includes('Wirklich'), 'Löschen fragt erst nach');
+  await A.click('[data-act=h-del]'); await A.waitForTimeout(600); ok(!(await A.$('[data-act=person][data-v="lisa l."]')), 'Orga kann eine Person aus der Helferliste löschen');
   // Fusszeile, Einrichten ohne Super-Admin, kein seitliches Verrutschen
   const foot = await A.$eval('.made', e => e.innerText.replace(/\s+/g, ' ').trim()); ok(/^Version \d/.test(foot) && !/Made|Susan/.test(foot), 'Fusszeile nur noch mit Version: ' + foot);
   await A.click('[data-tab=einrichten]'); await A.waitForTimeout(200);

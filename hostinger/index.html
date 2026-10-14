@@ -465,7 +465,7 @@ const STANDALONE = true;
 const LOGO = 'logo-rund.png';
 const MAILRE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const ROLE = { helper: 'Helfer', orga: 'Orga' };
-const VERSION = '14.10.2026 o';
+const VERSION = '14.10.2026 p';
 const NET = 'Keine Verbindung. Bitte später noch einmal versuchen.';
 const rid = p => p + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 
@@ -856,7 +856,9 @@ function vHelfer(m) {
         return '<li><span class="when mono">' + i.wd + ' ' + i.dm + ' ' + esc(span(s.sh)) + '</span><span><b>' + esc(s.st.name) + '</b>' + (s.st.place ? ', ' + esc(s.st.place) : '') + (isDouble(m, s.sh, r.name) ? ' <span class="dbl">2× in dieser Schicht</span>' : '') + '</span></li>'; }).join('') + '</ul>' : '<p class="muted">Noch keine Schicht.</p>')
       + '<div class="row">' + (n ? '<button class="btn" data-act="copy-person" data-v="' + esc(k) + '">Einsätze als Text kopieren</button>' : '')
       + '<button class="btn" data-act="hreg" data-v="' + esc(k) + '">' + (r.h ? 'Daten bearbeiten' : 'Kontaktdaten nachtragen') + '</button>'
-      + (r.h ? '<button class="btn" data-act="sos-toggle" data-v="' + esc(r.h.id) + '">' + (r.h.sos ? 'Nicht mehr SOS-Empfänger' : 'Als SOS-Empfänger benennen') + '</button>' : '') + '</div></div>';
+      + (r.h ? '<button class="btn" data-act="sos-toggle" data-v="' + esc(r.h.id) + '">' + (r.h.sos ? 'Nicht mehr SOS-Empfänger' : 'Als SOS-Empfänger benennen') + '</button>' : '')
+      + (r.h && r.h.role === 'orga' && r.h.id !== ME.id ? '<button class="btn quiet" data-act="role-off" data-v="' + esc(r.h.id) + '">Orga-Schild entfernen</button>' : '')
+      + (r.h && r.h.id !== ME.id ? '<button class="btn danger" data-act="h-del" data-v="' + esc(r.h.id) + '">' + (S.sure === 'hdel' + r.h.id ? 'Wirklich löschen?' + (n ? ' ' + n + (n === 1 ? ' Einsatz wird' : ' Einsätze werden') + ' ausgetragen' : '') : 'Aus der Helferliste löschen') + '</button>' : '') + '</div></div>';
     return o + '</li>'; }).join('') + '</ul>';
 }
 
@@ -1416,6 +1418,11 @@ view.addEventListener('click', e => {
   else if (a === 'niks') nikolaus(3);
   else if (a === 'install') { if (installEvt) { const ev = installEvt; installEvt = null; ev.prompt(); render(); } }
   else if (a === 'sos-new') openDlg({ type: 'sos', st: null, need: null, note: '' });
+  else if (a === 'role-off') { const h = DB.helpers.find(x => x.id === v); if (h) { delete h.role; commit('Orga-Schild bei ' + h.name + ' entfernt. Die Orga-Rechte hängen am Passwort.'); } }
+  else if (a === 'h-del') { const h = DB.helpers.find(x => x.id === v); if (!h || h.id === ME.id) return;
+    if (S.sure !== 'hdel' + v) { S.sure = 'hdel' + v; return render(); } S.sure = false;
+    const k = key(h.name); Object.values(DB.years).forEach(y => (y.shifts || []).forEach(sh => Object.values(sh.cells || {}).forEach(c => { if (Array.isArray(c.people)) c.people = c.people.filter(n => key(n) !== k); if (c.by) delete c.by[h.name]; })));
+    DB.helpers = DB.helpers.filter(x => x.id !== v); S.openPerson = null; commit(h.name + ' wurde aus der Helferliste gelöscht'); }
   else if (a === 'sos-toggle') { const h = DB.helpers.find(x => x.id === v); if (h) { h.sos = !h.sos; commit(h.sos ? h.name + ' ist jetzt SOS-Empfänger' : h.name + ' ist kein SOS-Empfänger mehr'); } }
   else if (a === 'sos-go' || a === 'sos-done') { const x = DB.sos.find(s => s.id === v); if (x) { x.status = a === 'sos-go' ? 'go' : 'done'; x.taker = myName(); commit(a === 'sos-go' ? 'Du hast übernommen' : 'Als erledigt markiert'); } }
   else if (a === 'sos-del') { DB.sos = DB.sos.filter(s => s.id !== v); commit('Meldung entfernt'); }
