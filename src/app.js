@@ -427,7 +427,7 @@ function vSos(m) {
   return h + '<ul class="list">' + items.map(x => { const st = x.status;
     const sub = [clock(x.at) + ' Uhr', 'von ' + x.by, x.note, st !== 'open' && x.taker ? (st === 'go' ? 'unterwegs: ' : 'erledigt von ') + x.taker : ''].filter(Boolean).join(' · ');
     return '<li><div class="item' + (st === 'done' ? ' faded' : '') + '"><span class="main"><b>' + esc(x.need) + '</b> für ' + esc(x.stName) + '<small>' + esc(sub) + '</small></span><span class="pill ' + (st === 'open' ? 'open' : st === 'go' ? 'part' : 'plain') + '">' + (st === 'open' ? 'offen' : st === 'go' ? 'unterwegs' : 'erledigt') + '</span>'
-      + (!handle ? '' : st === 'open' ? '<button class="btn primary" data-act="sos-go" data-v="' + x.id + '">Ich übernehme</button>' : st === 'go' ? '<button class="btn primary" data-act="sos-done" data-v="' + x.id + '">Erledigt</button>' : isOrga() ? '<button class="btn quiet" data-act="sos-del" data-v="' + x.id + '">Entfernen</button>' : '') + '</div></li>'; }).join('') + '</ul></section>';
+      + (!handle ? (st !== 'done' && x.by === myName() ? '<button class="btn" data-act="sos-done" data-v="' + x.id + '">Hat sich erledigt</button>' : '') : st === 'open' ? '<button class="btn primary" data-act="sos-go" data-v="' + x.id + '">Ich übernehme</button>' : st === 'go' ? '<button class="btn primary" data-act="sos-done" data-v="' + x.id + '">Erledigt</button>' : isOrga() ? '<button class="btn quiet" data-act="sos-del" data-v="' + x.id + '">Entfernen</button>' : '') + '</div></li>'; }).join('') + '</ul></section>';
 }
 
 function vEinrichten(m) {

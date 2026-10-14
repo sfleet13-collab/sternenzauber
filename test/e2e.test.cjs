@@ -106,6 +106,7 @@ let fails = 0, n = 0; const ok = (c, l) => { n++; console.log((c ? 'ok      ' : 
   await B.click('[data-tab=sos]'); ok((await B.$eval('#view', e => e.innerText)).includes('Nina Blasberg, Julian Richter, Magnus, Melli Schitteck, Frank Blasberg, Betsy Arens, Saskia Melis'), 'Helfer sehen, an wen die SOS-Meldung geht');
   await B.click('[data-act=sos-new]'); await B.click('#dlg [data-d=sos-st]'); await B.click('#dlg [data-d=sos-need]'); await B.click('#dform [type=submit]'); await B.waitForTimeout(600); await B.click('[data-d=cancel]');
   ok(!(await B.$('[data-act=sos-go]')), 'eine normale Helferin kann melden, aber nicht übernehmen');
+  ok(!!(await B.$('[data-act=sos-done]')), 'wer gemeldet hat, kann die eigene Meldung als erledigt markieren');
   await refresh(C); ok(await C.isVisible('.sosbanner') && (await C.$eval('.sosbanner', e => e.innerText)).includes('SOS') && (await C.$eval('.t-sos .n', e => e.innerText)) === '1', 'SOS-Empfängerin sieht Banner und roten Punkt');
   ok(!(await B.$('.sosbanner')), 'normale Helfer bekommen kein Banner');
   await C.click('.sosbanner [data-act=gotab]'); ok((await C.$eval('[data-tab=sos]', e => e.getAttribute('aria-selected'))) === 'true', 'Banner führt zum SOS-Bereich');
